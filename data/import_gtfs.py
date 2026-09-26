@@ -16,6 +16,8 @@ SOURCES = [
     ("ztm", HERE / "sources" / "gzm-2026-09-23.zip", "f4f5173db8b2325d70610d89865ebd62617bae33efdc33266026343ad5ec42d8"),
     ("ks", HERE / "sources" / "ks-2025-2026.zip", "fa1e524d4a57cecff1979214f335b00a2ce7edb0eb37070641a9a2ab1cf75adb"),
 ]
+PKM_SNAPSHOT = HERE / "sources" / "pkm-jaworzno-2026-09-26.json"
+PKM_SHA256 = "cdb23ed4fc5300a542a0ef940ff841efb2b0e4c34188969164a0e8132bbe19fb"
 POPULATION = json.loads((HERE / "population-density.json").read_text(encoding="utf-8"))
 CORE = tuple(POPULATION["bbox"])
 BBOX = (CORE[0] - .025, CORE[1] - .018, CORE[2] + .025, CORE[3] + .018)
@@ -119,6 +121,7 @@ def load_source(source, path):
             except (KeyError, ValueError):
                 continue
             stops[row["stop_id"]] = {"id": f"{source}:{row['stop_id']}", "name": row["stop_name"], "pos": pos, "city": city(row["stop_name"], pos)}
+        focus_stop_ids = {sid for sid, value in stops.items() if focus_city(value["pos"])}
 
         routes = {r["route_id"]: r for r in read_rows(z, "routes")}
         trips = {}
@@ -148,7 +151,7 @@ def load_source(source, path):
             valid = []
             for tid in trip_ids:
                 sequence = [sid for _, sid in times.get(tid, []) if sid in stops]
-                in_core = [sid for sid in sequence if inside(stops[sid]["pos"], CORE) and focus_city(stops[sid]["pos"])]
+                in_core = [sid for sid in sequence if sid in focus_stop_ids]
                 if len(in_core) >= 2:
                     valid.append((tid, sequence, len(in_core)))
             if not valid:
@@ -214,6 +217,14 @@ def main():
         routes.extend(source_routes)
         stops.extend(source_stops)
         print(source, len(source_routes), "patterns", len(source_stops), "stops")
+    if hashlib.sha256(PKM_SNAPSHOT.read_bytes()).hexdigest() != PKM_SHA256:
+        raise SystemExit("Unexpected hash for PKM Jaworzno timetable snapshot")
+    pkm = json.loads(PKM_SNAPSHOT.read_text(encoding="utf-8"))
+    for s in pkm["stops"]:
+        s["city"] = city(s["name"], s["pos"])
+    routes.extend(pkm["routes"])
+    stops.extend(pkm["stops"])
+    print("pkm", len(pkm["routes"]), "patterns", len(pkm["stops"]), "stops")
     routes.sort(key=lambda r: ({"tram": 0, "rail": 1, "bus": 2}[r["mode"]], r["name"], r["direction"]))
     stops.sort(key=lambda s: s["id"])
     output = {
@@ -223,6 +234,7 @@ def main():
         "sources": [
             {"name": "GZM ZTM", "version": "schedule_ZTM_2026.09.23_11277_0005", "date": "2026-09-23", "license": "CC BY", "url": "https://otwartedane.metropoliagzm.pl/dataset/rozklady-jazdy-i-lokalizacja-przystankow-gtfs-wersja-rozszerzona", "sha256": SOURCES[0][2]},
             {"name": "Koleje Śląskie", "version": "2025-2026", "date": "2026-09-23 download", "license": "See source terms", "url": "https://koleje-ks.pl/gtfs/2025-2026.zip", "sha256": SOURCES[1][2]},
+            {"name": "PKM Jaworzno", "version": "official public timetable snapshot", "date": "2026-09-26 retrieval", "license": "Source terms not stated; link to operator", "url": "https://www.pkm.jaworzno.pl/rozklady/start.php", "sha256": PKM_SHA256, "note": pkm["method"]},
         ],
         "routes": routes,
         "stops": stops,

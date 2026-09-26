@@ -9,14 +9,14 @@
   const cityBoundaries = population?.cityBoundaries?.type === 'FeatureCollection' ? population.cityBoundaries : { type: 'FeatureCollection', features: [] };
   const STORAGE = 'gzm-transit-lab:' + (network && network.version);
   const DISPLAY_STORAGE = 'gzm-transit-lab:display';
-  const LEGACY_VERSIONS = ['2026-09-23-gzm-v2', '2026-09-23-gzm-v1'];
+  const LEGACY_VERSIONS = ['2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'];
   const $ = id => document.getElementById(id);
   const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const format = n => new Intl.NumberFormat('en-GB').format(Math.round(n));
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
   const colors = { bus: '#ef705e', tram: '#15b8c7', rail: '#5387ef', metro: '#8068e8' };
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
-  const state = { ...empty(), selected: null, selectedStop: null, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: innerWidth > 1050 };
+  const state = { ...empty(), selected: null, selectedStop: null, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
   let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0;
 
   if (!network || !sim || !window.maplibregl) {
@@ -30,7 +30,24 @@
   function stop(id) { return byId.get(id) || state.customStops.find(s => s.id === id); }
   function allRoutes() { return network.routes.concat(state.customRoutes).map(r => ({ ...r, ...(state.overrides[r.id] || {}) })); }
   function routeById(id) { return allRoutes().find(r => r.id === id); }
-  function routeColor(r) { return r.source === 'player' || r.mode === 'metro' ? (r.color || colors[r.mode]) : colors[r.mode]; }
+  function routeColor(r) { return r.color || colors[r.mode]; }
+  const linePalette = ['#8068e8', '#0c98ac', '#d94e70', '#e88b23', '#2c9c70', '#a361cf', '#376fe0', '#d4673a', '#697ab4', '#bd4f9a'];
+  function suggestLineColor(points = []) {
+    const existing = state.customRoutes.map(r => ({ color: routeColor(r), points: r.stopIds.map(stop).filter(Boolean).map(s => s.pos) }));
+    const colorDistance = (a, b) => {
+      const rgb = value => [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16));
+      const x = rgb(a), y = rgb(b);
+      return Math.hypot(...x.map((v, i) => v - y[i]));
+    };
+    const center = points.length ? points[Math.floor(points.length / 2)] : null;
+    return linePalette.reduce((best, candidate) => {
+      const score = existing.reduce((sum, r) => {
+        const nearby = center && r.points.length ? Math.min(...r.points.map(p => sim.km(center, p))) < 2 : true;
+        return sum + (nearby ? 1 : .25) * Math.max(0, 180 - colorDistance(candidate, r.color));
+      }, 0) + (candidate === colors.metro ? 4 : 0);
+      return score < best.score ? { color: candidate, score } : best;
+    }, { color: linePalette[0], score: Infinity }).color;
+  }
   function modeLabel(mode) { return ({ metro: 'Metro', tram: 'Tram', rail: 'Rail' })[mode] || String(mode || 'line'); }
   function nextDraftName(mode) {
     const prefix = ({ metro: 'M', tram: 'T', rail: 'R' })[mode] || 'L';
@@ -43,8 +60,7 @@
     if (innerWidth <= 600) return { top: 132, bottom: state.mobileView === 'map' ? 85 : 340, left: 18, right: 18 };
     const css = getComputedStyle(document.documentElement);
     const leftPane = parseFloat(css.getPropertyValue('--network-pane-width')) || 320;
-    const rightPane = parseFloat(css.getPropertyValue('--inspector-pane-width')) || 320;
-    return { top: 95, bottom: 75, left: state.networkOpen ? leftPane + 15 : 75, right: state.inspectorOpen ? rightPane + 15 : 75 };
+    return { top: 95, bottom: 85, left: state.networkOpen ? leftPane + 15 : 75, right: 75 };
   }
   function snapshot() { return JSON.stringify({ overrides: state.overrides, customRoutes: state.customRoutes, customStops: state.customStops }); }
   function remember() { state.history.push(snapshot()); if (state.history.length > 30) state.history.shift(); }
@@ -86,20 +102,24 @@
   let showFullscreenButton = true;
   try { showFullscreenButton = JSON.parse(localStorage.getItem(DISPLAY_STORAGE) || '{}').showFullscreenButton !== false; } catch (_) {}
   function renderFullscreen() {
-    $('fullscreen-button').hidden = !showFullscreenButton;
-    const active = !!document.fullscreenElement;
+    const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    $('fullscreen-button').hidden = !showFullscreenButton && !active;
     $('fullscreen-button').innerHTML = `<span aria-hidden="true">⛶</span><span class="fullscreen-text">${active ? 'Exit fullscreen' : 'Fullscreen'}</span>`;
     $('fullscreen-button').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
     $('fullscreen-button').setAttribute('aria-pressed', String(active));
   }
   async function toggleFullscreen() {
     try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await document.documentElement.requestFullscreen();
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+      } else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+      else if (document.documentElement.webkitRequestFullscreen) await document.documentElement.webkitRequestFullscreen();
+      else throw new Error('Fullscreen API unavailable');
     } catch (_) { toast('Fullscreen is unavailable in this browser.'); }
   }
   function openSettings() {
-    modal(`<span class="chip">DISPLAY SETTINGS</span><h2>Display</h2><div class="form-stack"><button id="settings-fullscreen" type="button">${document.fullscreenElement ? 'Exit' : 'Enter'} fullscreen</button><label class="toggle-row"><input id="settings-fullscreen-visible" type="checkbox" ${showFullscreenButton ? 'checked' : ''}> Show fullscreen button</label><p class="fine-print">Press F to toggle fullscreen while the map or a panel has focus. Escape exits fullscreen.</p></div>`);
+    modal(`<span class="chip">DISPLAY SETTINGS</span><h2>Display</h2><div class="form-stack"><button id="settings-fullscreen" type="button">${document.fullscreenElement || document.webkitFullscreenElement ? 'Exit' : 'Enter'} fullscreen</button><label class="toggle-row"><input id="settings-fullscreen-visible" type="checkbox" ${showFullscreenButton ? 'checked' : ''}> Show fullscreen button</label><p class="fine-print">Press F to toggle fullscreen while the map or a panel has focus. Escape exits fullscreen.</p></div>`);
     $('settings-fullscreen').onclick = async () => { closeModal(); await toggleFullscreen(); };
     $('settings-fullscreen-visible').onchange = e => {
       showFullscreenButton = e.target.checked;
@@ -107,15 +127,26 @@
       renderFullscreen();
     };
   }
-  document.addEventListener('fullscreenchange', () => { renderFullscreen(); setTimeout(() => map?.resize(), 50); });
+  for (const event of ['fullscreenchange', 'webkitfullscreenchange']) {
+    document.addEventListener(event, () => { renderFullscreen(); setTimeout(() => map?.resize(), 50); });
+  }
   renderFullscreen();
   $('heatmap-toggle').disabled = !maskCells.length;
   renderPopulationControl();
-  // Keep scenario feedback visible before the long imported-line list.
-  $('mode-filters').closest('.section').before($('stats').closest('.section'));
-  $('stats').closest('.section').after($('template-section'));
+  function setPanelTab(tab) {
+    state.panelTab = tab;
+    document.body.dataset.panelTab = tab;
+    document.querySelectorAll('[data-panel-tab]').forEach(button => {
+      const active = button.dataset.panelTab === tab;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    document.querySelector('.sidebar').scrollTop = 0;
+  }
+  setPanelTab('network');
   function setMobileView(view) {
     state.mobileView = view; document.body.dataset.mobileView = view;
+    if (view !== 'map') setPanelTab(view === 'line' ? 'inspect' : view);
     document.querySelectorAll('.mobile-tabs button').forEach(button => {
       const active = button.dataset.view === view;
       button.classList.toggle('active', active);
@@ -126,12 +157,18 @@
   setMobileView('map');
   function setPanel(panel, open) {
     const left = panel === 'network';
+    if (!left) {
+      state.inspectorOpen = open;
+      if (open) { state.networkOpen = true; setPanel('network', true); setPanelTab('inspect'); }
+      else if (state.panelTab === 'inspect') setPanelTab('network');
+      return;
+    }
     state[left ? 'networkOpen' : 'inspectorOpen'] = open;
     document.body.dataset[left ? 'networkOpen' : 'inspectorOpen'] = String(open);
-    const rail = $(left ? 'network-rail' : 'inspector-rail');
+    const rail = $('network-rail');
     rail.setAttribute('aria-expanded', String(open));
-    rail.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} ${left ? 'network' : 'inspector'} panel`);
-    rail.textContent = left ? (open ? '‹' : '›') : (open ? '›' : '‹');
+    rail.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} network panel`);
+    rail.textContent = open ? '‹' : '›';
     setTimeout(() => map?.resize(), 190);
   }
   setPanel('network', state.networkOpen);
@@ -159,12 +196,14 @@
     }
   }
   function modal(html) {
-    modalReturnFocus = document.activeElement;
+    if ($('modal').hidden) {
+      modalReturnFocus = document.activeElement;
+      modalInertState = [...document.body.children].filter(el => el !== $('modal')).map(el => [el, el.inert]);
+      modalInertState.forEach(([el]) => { el.inert = true; });
+    }
     $('modal-content').innerHTML = html;
     const heading = $('modal-content').querySelector('h2');
     if (heading) heading.id = 'modal-title';
-    modalInertState = [...document.body.children].filter(el => el !== $('modal')).map(el => [el, el.inert]);
-    modalInertState.forEach(([el]) => { el.inert = true; });
     $('modal').hidden = false;
     $('modal-close').focus();
   }
@@ -186,7 +225,6 @@
     minZoom: 8.2, maxZoom: 18, maxPitch: 60,
     attributionControl: false, antialias: true,
   });
-  map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), 'bottom-right');
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
   map.on('error', ev => { if (ev.error && /style|tile|fetch|network/i.test(ev.error.message || '')) $('loading')?.classList.add('failed'); });
   const restoreGameLayers = () => {
@@ -594,7 +632,7 @@
     menu.style.visibility = 'hidden';
     const width = menu.offsetWidth, height = menu.offsetHeight;
     const leftPane = innerWidth > 600 && state.networkOpen ? document.querySelector('.sidebar').getBoundingClientRect().right : 0;
-    const rightPane = innerWidth > 600 && state.inspectorOpen ? document.querySelector('.inspector').getBoundingClientRect().left : innerWidth;
+    const rightPane = innerWidth;
     const room = rightPane - leftPane;
     const minX = room >= width + 16 ? leftPane + 8 : 8;
     const maxX = room >= width + 16 ? rightPane - width - 8 : innerWidth - width - 8;
@@ -648,7 +686,7 @@
   function changed() { persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); }
   function clearSelection() {
     state.selected = null; state.selectedStop = null;
-    renderList(); renderInspector(); renderMap();
+    setPanelTab('network'); renderList(); renderInspector(); renderMap();
   }
   function inspectStop(id) {
     if (!stop(id)) return;
@@ -688,6 +726,7 @@
     const host = $('template-list');
     if (!host) return;
     $('template-section').hidden = !templates.length;
+    $('template-count').textContent = `(${templates.length})`;
     host.innerHTML = templates.map(t => {
       const mode = ['metro', 'tram', 'rail'].includes(t.mode) ? t.mode : 'rail';
       const count = Array.isArray(t.stations) ? t.stations.length : 0;
@@ -699,7 +738,7 @@
     if (!template || !Array.isArray(template.stations) || template.stations.length < 2) return toast('This line concept is incomplete.');
     const mode = ['tram', 'rail', 'metro'].includes(template.mode) ? template.mode : 'rail';
     state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = template;
-    state.draftMode = mode; state.draftColor = colors[mode] || colors.metro;
+    state.draftMode = mode; state.draftColor = suggestLineColor(template.stations.map(s => [Number(s.lon), Number(s.lat)]));
     state.draftName = template.defaultName || nextDraftName(mode);
     state.draftHeadway = Number(template.headway) || 8;
     state.draft = template.stations.map((station, i) => ({
@@ -725,7 +764,7 @@
     const shown = routes.filter(r => (state.filter === 'all' || r.mode === state.filter) && (!q || `${r.name} ${r.longName}`.toLocaleLowerCase('pl').includes(q)));
     $('visible-total').textContent = `${shown.length} shown`;
     const list = state.showAll || q || state.filter !== 'all' ? shown : shown.slice(0, 80);
-    $('route-list').innerHTML = list.map(r => `<button class="route-card mode-${r.mode}${r.id === state.selected ? ' selected' : ''}" data-route="${escape(r.id)}" aria-pressed="${r.id === state.selected}" style="width:100%;text-align:left;${r.active === false ? 'opacity:.48;' : ''}"><span class="route-info"><strong>${escape(r.name)} <span class="route-dir">${escape(r.ring ? '⟳' : r.source === 'player' ? '↔' : r.direction === '1' ? '↩' : '→')}</span></strong><small>${escape(r.longName || r.stopIds.length + ' stops')}</small></span><span class="route-type">${escape(r.mode)}</span></button>`).join('') || '<p class="empty-state">No lines match this filter.</p>';
+    $('route-list').innerHTML = list.map(r => `<button class="route-card mode-${r.mode}${r.id === state.selected ? ' selected' : ''}" data-route="${escape(r.id)}" aria-pressed="${r.id === state.selected}" style="--route-color:${escape(routeColor(r))};width:100%;text-align:left;${r.active === false ? 'opacity:.48;' : ''}"><span class="route-info"><strong>${escape(r.name)} <span class="route-dir">${escape(r.ring ? '⟳' : r.source === 'player' ? '↔' : r.direction === '1' ? '↩' : '→')}</span></strong><small>${escape(r.longName || r.stopIds.length + ' stops')}</small></span><span class="route-type">${escape(r.mode)}</span></button>`).join('') || '<p class="empty-state">No lines match this filter.</p>';
     $('more-routes').style.display = !state.showAll && !q && state.filter === 'all' && shown.length > 80 ? '' : 'none';
     document.querySelectorAll('#mode-filters button').forEach(b => b.classList.toggle('active', b.dataset.mode === state.filter));
     $('undo-button').disabled = !state.history.length;
@@ -740,10 +779,11 @@
       const heading = template ? `Edit this ${mode.toLowerCase()} concept` : 'Draw your metro';
       const intro = state.movingDraftIndex !== null ? `Click the new map position for ${state.draft[state.movingDraftIndex]?.name || 'this station'}. Press Escape to cancel.` : template ? 'This sourced idea is loaded as a draft. Add or remove stations to explore a variant.' : 'Tap the map to place stations. Click near an existing stop to snap to its location and enable a transfer.';
       const routeNote = (template ? 'Draft segments are direct lines between the displayed stations. Proposed station sites marked schematic are map anchors, not surveyed locations.' : 'Metro tracks are drawn as direct segments. Tunnel engineering and construction cost are outside this sandbox.') + (state.draftRing ? ' The closing segment connects directly to the first station.' : '') + ' Right-click a station to move or remove it; middle-drag to reposition it directly.';
-      el.innerHTML = `<div class="section"><div class="section-title"><h2>${template ? 'PROPOSAL DRAFT' : 'NEW INFRASTRUCTURE'}</h2><span class="chip mode-${escape(state.draftMode)}">${escape(mode)}</span></div><h2 class="inspector-heading">${escape(heading)}</h2><p class="intro">${escape(intro)}</p><div class="form-stack"><label>Line name<input id="metro-name" maxlength="18" value="${escape(state.draftName)}"></label><div class="form-row"><label>Every · minutes<input id="metro-headway" type="number" min="3" max="60" value="${state.draftHeadway}"></label><label>Line color<input id="metro-color" type="color" value="${escape(state.draftColor)}"></label></div><label class="toggle-row"><input id="draft-ring" type="checkbox" ${state.draftRing ? 'checked' : ''}> Ring line · one continuous direction</label><small>Stops are served in drawn order, then the line returns to its first stop.</small></div></div>${sourceNote}<div class="section"><div class="section-title"><h3>Stations</h3><span class="value">${state.draft.length}</span></div><div class="stop-list">${state.draft.map((s, i) => `<div class="stop-row"><span class="stop-index">${i + 1}</span><span title="${escape(s.coordinateNote || '')}">${escape(s.name)}${s.schematic ? '<small class="source-note">Schematic location</small>' : ''}</span><button data-draft-remove="${i}" title="Remove station">×</button></div>`).join('') || '<p class="empty-state">Click on the map to begin.</p>'}</div><div class="toolbar" style="margin-top:14px"><button id="cancel-metro">Cancel</button><button id="finish-metro" class="primary" ${state.draft.length < (state.draftRing ? 3 : 2) ? 'disabled' : ''}>Open line</button></div></div><div class="section"><p class="fine-print">${escape(routeNote)}</p></div>`;
+      el.innerHTML = `<div class="section"><div class="section-title"><h2>${template ? 'PROPOSAL DRAFT' : 'NEW INFRASTRUCTURE'}</h2><span class="chip mode-${escape(state.draftMode)}">${escape(mode)}</span></div><h2 class="inspector-heading">${escape(heading)}</h2><p class="intro">${escape(intro)}</p><div class="form-stack"><label>Line name<input id="metro-name" maxlength="18" value="${escape(state.draftName)}"></label><div class="form-row"><label>Every · minutes<input id="metro-headway" type="number" min="3" max="60" value="${state.draftHeadway}"></label><label>Line color<input id="metro-color" type="color" value="${escape(state.draftColor)}"></label></div><button type="button" id="suggest-draft-color">Suggest color</button><label class="toggle-row"><input id="draft-ring" type="checkbox" ${state.draftRing ? 'checked' : ''}> Ring line · one continuous direction</label><small>Stops are served in drawn order, then the line returns to its first stop.</small></div></div>${sourceNote}<div class="section"><div class="section-title"><h3>Stations</h3><span class="value">${state.draft.length}</span></div><div class="stop-list">${state.draft.map((s, i) => `<div class="stop-row"><span class="stop-index">${i + 1}</span><span title="${escape(s.coordinateNote || '')}">${escape(s.name)}${s.schematic ? '<small class="source-note">Schematic location</small>' : ''}</span><button data-draft-remove="${i}" title="Remove station">×</button></div>`).join('') || '<p class="empty-state">Click on the map to begin.</p>'}</div><div class="toolbar" style="margin-top:14px"><button id="cancel-metro">Cancel</button><button id="finish-metro" class="primary" ${state.draft.length < (state.draftRing ? 3 : 2) ? 'disabled' : ''}>Open line</button></div></div><div class="section"><p class="fine-print">${escape(routeNote)}</p></div>`;
       $('metro-name').oninput = e => state.draftName = e.target.value;
       $('metro-headway').onchange = e => state.draftHeadway = Math.max(3, Math.min(60, Number(e.target.value) || 8));
       $('metro-color').oninput = e => { state.draftColor = e.target.value; renderMap(); };
+      $('suggest-draft-color').onclick = () => { state.draftColor = suggestLineColor(state.draft.map(s => s.pos)); $('metro-color').value = state.draftColor; renderMap(); };
       $('draft-ring').onchange = e => { state.draftRing = e.target.checked; renderInspector(); renderMap(); };
       el.querySelectorAll('[data-draft-remove]').forEach(button => {
         const station = state.draft[Number(button.dataset.draftRemove)];
@@ -772,13 +812,18 @@
     }
     const r = routeById(state.selected);
     if (!r) {
-      el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2></div><div class="inspector-hero"><span class="hero-mark">↗</span><h2>Make the network yours.</h2><p>Select any route on the map or in the list to adjust service. Or draw a metro line through the real city.</p><button class="primary" id="hero-metro">+ Draw metro line</button></div></div><div class="section"><div class="section-title"><h3>Source snapshot</h3></div><p class="source-note">GZM ZTM: 23 Sep 2026<br>Koleje Śląskie: 2025–2026 feed<br>GUS resident grid: 2021<br>Rapid access: scenario-derived<br>OpenStreetMap basemap</p><button id="inspector-data">View data and method ↗</button></div>`;
+      el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2></div><div class="inspector-hero"><span class="hero-mark">↗</span><h2>Make the network yours.</h2><p>Select any route on the map or in the list to adjust service. Or draw a metro line through the real city.</p><button class="primary" id="hero-metro">+ Draw metro line</button></div></div><div class="section"><div class="section-title"><h3>Source snapshot</h3></div><p class="source-note">GZM ZTM: 23 Sep 2026<br>Koleje Śląskie: 2025–2026 feed<br>PKM Jaworzno: 26 Sep 2026<br>GUS resident grid: 2021<br>Rapid access: scenario-derived<br>OpenStreetMap basemap</p><button id="inspector-data">View data and method ↗</button></div>`;
       $('hero-metro').onclick = enterMetroTool; $('inspector-data').onclick = openData;
       return;
     }
     const templateNote = r.templateId ? `<p class="model-notice"><b>${escape(r.templateStatus || 'Based on a historical proposal')}</b> · ${escape(r.templateConfidence || 'Conceptual alignment')}<br>${escape(r.templateDescription || 'This line began from a sourced regional concept.')}${r.templateSourceUrl ? `<br><a href="${escape(r.templateSourceUrl)}" target="_blank" rel="noopener">${escape(r.templateSourceTitle || 'Read proposal source')} ↗</a>` : ''}<br>Stations tagged schematic are approximate map anchors; line segments are direct and do not represent an engineered alignment.</p>` : '';
-    const intervalHelp = r.ring ? 'Continuous one direction service, returning from the last stop to the first.' : r.source === 'player' ? 'Service runs in both directions; return trips and cost are modeled.' : 'Estimated from scheduled daily service in the baseline.';
-    el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close line inspector">×</button><span class="chip mode-${escape(r.mode)}">${escape(modeLabel(r.mode))}</span></div><div class="inspector-line-title"><span class="line-badge" style="background:${escape(routeColor(r))}">${escape(r.name)}</span><div><h2>${escape(r.longName || r.name)}</h2><small>${r.source === 'player' ? `Your ${escape(modeLabel(r.mode).toLowerCase())} line` : r.source === 'ks' ? 'Koleje Śląskie GTFS' : 'GZM ZTM GTFS'} · ${r.stopIds.length} stops</small></div></div>${templateNote}${r.edited ? '<p class="model-notice">Stop edits use direct geometry between stops; street or track alignment is not recalculated.</p>' : ''}<div class="form-stack"><label>Service interval · minutes<input id="route-headway" type="number" min="3" max="120" value="${escape(r.headway)}"><small>${escape(intervalHelp)}</small></label>${r.source === 'player' ? `<label class="toggle-row"><input id="route-ring" type="checkbox" ${r.ring ? 'checked' : ''} ${r.stopIds.length < 3 ? 'disabled' : ''}> Ring line · one continuous direction</label>` : ''}<label class="toggle-row"><input id="route-active" type="checkbox" ${r.active === false ? '' : 'checked'}> Line in service</label></div><div class="toolbar"><button id="add-stop-button">+ Add existing stop</button>${r.ring ? '<button id="reverse-ring-button" type="button">Reverse ring direction</button>' : ''}${r.source === 'player' ? `<button id="delete-route-button" class="danger">Delete ${escape(modeLabel(r.mode).toLowerCase())} line</button>` : '<button id="revert-route-button">Revert line</button>'}</div></div><div class="section"><div class="section-title"><h3>Stop sequence</h3><span class="value">${r.stopIds.length}</span></div><div class="stop-list">${r.stopIds.map((id, i) => { const s = stop(id); return `<div class="stop-row"><span class="stop-index">${i + 1}</span><button class="stop-name-button" type="button" data-inspect-stop="${escape(id)}" title="Inspect all service at this stop">${escape(s?.name || id)}${s?.schematic ? '<small class="source-note">Schematic location</small>' : ''}</button><div class="stop-actions"><button data-stop-up="${i}" ${i === 0 ? 'disabled' : ''} title="Move earlier">↑</button><button data-stop-down="${i}" ${i === r.stopIds.length - 1 ? 'disabled' : ''} title="Move later">↓</button><button data-stop-remove="${i}" ${r.stopIds.length <= 2 ? 'disabled' : ''} title="Remove stop">×</button></div></div>`; }).join('')}</div></div>`;
+    const intervalHelp = r.ring ? 'Continuous one direction service, returning from the last stop to the first.' : r.source === 'player' ? 'Service runs in both directions; return trips and cost are modeled.' : r.source === 'pkm' ? 'Weekday departure-count estimate over 14 hours. Map segments run directly between published stops.' : 'Estimated from scheduled daily service in the baseline.';
+    el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close line inspector">×</button><span class="chip mode-${escape(r.mode)}">${escape(modeLabel(r.mode))}</span></div><div class="inspector-line-title"><span class="line-badge" style="background:${escape(routeColor(r))}">${escape(r.name)}</span><div><h2>${escape(r.longName || r.name)}</h2><small>${r.source === 'player' ? `Your ${escape(modeLabel(r.mode).toLowerCase())} line` : r.source === 'ks' ? 'Koleje Śląskie GTFS' : 'GZM ZTM GTFS'} · ${r.stopIds.length} stops</small></div></div>${templateNote}${r.source === 'pkm' ? `<p class="model-notice">Main timetable sequence; branches are simplified.${r.unmappedStops?.length ? ` ${r.unmappedStops.length} stops without published map coordinates are omitted: ${escape([...new Set(r.unmappedStops)].join(', '))}.` : ''}</p>` : ''}${r.edited ? '<p class="model-notice">Stop edits use direct geometry between stops; street or track alignment is not recalculated.</p>' : ''}<div class="form-stack"><label>Service interval · minutes<input id="route-headway" type="number" min="3" max="120" value="${escape(r.headway)}"><small>${escape(intervalHelp)}</small></label>${r.source === 'player' ? `<label class="toggle-row"><input id="route-ring" type="checkbox" ${r.ring ? 'checked' : ''} ${r.stopIds.length < 3 ? 'disabled' : ''}> Ring line · one continuous direction</label>` : ''}<label class="toggle-row"><input id="route-active" type="checkbox" ${r.active === false ? '' : 'checked'}> Line in service</label></div><div class="toolbar"><button id="add-stop-button">+ Add existing stop</button>${r.ring ? '<button id="reverse-ring-button" type="button">Reverse ring direction</button>' : ''}${r.source === 'player' ? `<button id="delete-route-button" class="danger">Delete ${escape(modeLabel(r.mode).toLowerCase())} line</button>` : '<button id="revert-route-button">Revert line</button>'}</div></div><div class="section"><div class="section-title"><h3>Stop sequence</h3><span class="value">${r.stopIds.length}</span></div><div class="stop-list">${r.stopIds.map((id, i) => { const s = stop(id); return `<div class="stop-row"><span class="stop-index">${i + 1}</span><button class="stop-name-button" type="button" data-inspect-stop="${escape(id)}" title="Inspect all service at this stop">${escape(s?.name || id)}${s?.schematic ? '<small class="source-note">Schematic location</small>' : ''}</button><div class="stop-actions"><button data-stop-up="${i}" ${i === 0 ? 'disabled' : ''} title="Move earlier">↑</button><button data-stop-down="${i}" ${i === r.stopIds.length - 1 ? 'disabled' : ''} title="Move later">↓</button><button data-stop-remove="${i}" ${r.stopIds.length <= 2 ? 'disabled' : ''} title="Remove stop">×</button></div></div>`; }).join('')}</div></div>`;
+    const sourceLabel = el.querySelector('.inspector-line-title small');
+    if (r.source === 'pkm') sourceLabel.textContent = `PKM Jaworzno timetable · ${r.stopIds.length} stops`;
+    $('route-headway').parentElement.insertAdjacentHTML('afterend', `<div class="form-row"><label>Line color<input id="route-color" type="color" value="${escape(routeColor(r))}"></label><button type="button" id="suggest-route-color">Suggest color</button></div>`);
+    $('route-color').onchange = e => setRouteField(r, 'color', e.target.value);
+    $('suggest-route-color').onclick = () => setRouteField(r, 'color', suggestLineColor(r.stopIds.map(stop).filter(Boolean).map(s => s.pos)));
     $('route-headway').onchange = e => setRouteField(r, 'headway', Math.max(3, Math.min(120, Number(e.target.value) || r.headway)));
     el.querySelectorAll('[data-stop-up], [data-stop-down], [data-stop-remove]').forEach(button => {
       const index = Number(button.dataset.stopUp ?? button.dataset.stopDown ?? button.dataset.stopRemove);
@@ -800,22 +845,60 @@
     const revert = $('revert-route-button'); if (revert) revert.onclick = () => { remember(); delete state.overrides[r.id]; changed(); toast('Line restored from source snapshot.'); };
     const del = $('delete-route-button'); if (del) del.onclick = () => { remember(); state.customRoutes = state.customRoutes.filter(x => x.id !== r.id); state.customStops = state.customStops.filter(s => !s.id.startsWith(r.id + ':')); state.selected = null; changed(); toast(`${modeLabel(r.mode)} line deleted.`); };
   }
-  function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = colors.metro; state.draftName = nextDraftName('metro'); setMobileView('line'); if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderMap(); toast('Click the map to place metro stations.'); }
+  function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderMap(); toast('Click the map to place metro stations.'); }
 
-  function scheduleStats() { clearTimeout(recomputeTimer); recomputeTimer = setTimeout(recomputeStats, 35); }
+  let statsWorker = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
+  function scheduleStats() {
+    // Invalidate an in-flight result as soon as the scenario changes.
+    statsRevision++;
+    clearTimeout(recomputeTimer); recomputeTimer = setTimeout(recomputeStats, 35);
+  }
   function recomputeStats() {
     $('stat-passengers').textContent = '…'; $('stat-satisfaction').textContent = '…';
-    setTimeout(() => { state.stats = sim.calculate(network, state.customRoutes, state.customStops, state.overrides); renderStats(); }, 15);
+    const revision = ++statsRevision;
+    const scenario = { revision, customRoutes: state.customRoutes, customStops: state.customStops, overrides: state.overrides };
+    if (!workerUnavailable) {
+      try {
+        if (!statsWorker) {
+          statsWorker = new Worker('./sim-worker.js?v=2026-09-26-region-2');
+          statsWorker.onmessage = ({ data }) => {
+            statsBusy = false;
+            if (data.revision === statsRevision) {
+              state.baseline = data.baseline; state.stats = data.stats; renderStats();
+            }
+            if (pendingStats) {
+              const next = pendingStats; pendingStats = null; statsBusy = true; statsWorker.postMessage(next);
+            }
+          };
+          statsWorker.onerror = () => {
+            statsWorker.terminate(); statsWorker = null; workerUnavailable = true; statsBusy = false; pendingStats = null;
+            recomputeStats();
+          };
+        }
+        if (statsBusy) pendingStats = structuredClone(scenario);
+        else { statsBusy = true; statsWorker.postMessage(scenario); }
+        return;
+      } catch (_) { statsWorker?.terminate(); statsWorker = null; workerUnavailable = true; }
+    }
+    // Local-file previews and browsers without workers retain the same model.
+    setTimeout(() => {
+      if (revision !== statsRevision) return;
+      state.baseline ||= sim.calculate(network, [], [], {});
+      state.stats = sim.calculate(network, scenario.customRoutes, scenario.customStops, scenario.overrides);
+      renderStats();
+    }, 15);
   }
   function renderStats() {
     const s = state.stats, b = state.baseline; if (!s) return;
     const served = s.passengers > 0;
+    $('pulse-passengers').textContent = compactMillions(s.passengers);
+    $('pulse-satisfaction').textContent = served ? s.satisfaction.toFixed(2) : '—';
     $('stat-passengers').textContent = format(s.passengers);
     $('stat-satisfaction').textContent = served ? `${s.satisfaction.toFixed(2)}/100` : 'No trips';
     $('stat-satisfaction').closest('.stat-card').classList.toggle('unavailable', !served);
     $('stat-satisfaction').title = served ? 'Modeled satisfaction index, not observed survey data.' : 'No modeled transit trips were served; satisfaction cannot be estimated.';
     $('stat-wait').textContent = served ? `${s.wait.toFixed(2)} min` : '—';
-    $('stat-wait').title = served ? 'Average modeled initial waiting time.' : 'No modeled transit trips were served; waiting time cannot be estimated.';
+    $('stat-wait').title = served ? 'Average modeled waiting time across all boardings.' : 'No modeled transit trips were served; waiting time cannot be estimated.';
     $('stat-cost').textContent = compactMillions(s.cost);
     $('stat-cost').title = `zł ${format(s.cost)} per simulated day`;
     $('stat-cost').setAttribute('aria-label', `Operating cost: ${format(s.cost)} Polish złoty per simulated day`);
@@ -823,18 +906,23 @@
     $('delta-passengers').textContent = b ? delta(s.passengers, b.passengers) : 'Model estimate';
     $('delta-satisfaction').textContent = served ? (b ? delta(s.satisfaction, b.satisfaction, ' pts', 2) : 'Model index') : 'Unavailable';
     $('secondary-stats').innerHTML = `<span><b>${served ? `${s.travel.toFixed(2)} min` : '—'}</b> journey</span><span><b>${served ? s.transfers : '—'}</b> transfers</span><span><b>${s.coverage}%</b> demand served</span>`;
+    const cities = Object.keys(s.cityStats || {}).sort((a, b) => a.localeCompare(b, 'pl'));
+    state.resultCity = cities.includes(state.resultCity) ? state.resultCity : (cities.includes('Katowice') ? 'Katowice' : cities[0]);
+    const local = s.cityStats?.[state.resultCity], original = b?.cityStats?.[state.resultCity];
+    $('local-results').innerHTML = `<label>Local impact<select id="result-city">${cities.map(city => `<option value="${escape(city)}" ${city === state.resultCity ? 'selected' : ''}>${escape(city)}</option>`).join('')}</select></label><div class="local-results-grid"><span><b>${format(local?.passengers || 0)}</b> trips <small>${original ? delta(local.passengers, original.passengers) : ''}</small></span><span><b>${local?.passengers ? local.satisfaction.toFixed(2) : '—'}</b> satisfaction <small>${original && local?.passengers ? delta(local.satisfaction, original.satisfaction, ' pts', 2) : ''}</small></span><span><b>${local?.coverage.toFixed(2) || '0.00'}%</b> demand served <small>${original ? delta(local.coverage, original.coverage, ' pts', 2) : ''}</small></span></div>`;
+    $('result-city').onchange = e => { state.resultCity = e.target.value; renderStats(); };
   }
 
   function openData() {
     const source = population?.source || {};
-    const populationCredit = maskCells.length ? `<p><b>Population</b> — <a href="${escape(source.url || './data/population-density.json')}" target="_blank" rel="noopener">GUS 2021 resident grid</a>; ${escape(source.attribution || '')} The mask uses published 1 km polygons, including zero-resident cells. A muted municipal fill blends gaps at city edges. Cells are selected by their centers inside the eight PRG city boundaries, so the selected total is not an exact full-municipality count.</p>` : '';
-    const demandExplanation = state.stats?.demandPopulation ? `The selected 2021 grid contains ${format(state.stats.demandPopulation)} residents. We group them around ${sim.zones.length} fixed neighborhood anchors and weight origins and destinations by those residents. At 0.6 assumed cross-neighborhood trip opportunities per resident per day, that produces ${format(state.stats.demandTrips)} modeled opportunities. The population and service snapshots are from different years.` : 'Population data is unavailable, so the model uses 90,000 assumed daily trip opportunities.';
-    modal(`<span class="chip">DATA & MODEL</span><h2>Real network. Estimated outcomes.</h2><p>The fixed snapshot covers ${escape(network.focus.join(', '))}, with surrounding interchange context.</p>
-      <div class="modal-sources"><p><b>GZM ZTM</b> — <a href="https://otwartedane.metropoliagzm.pl/dataset/rozklady-jazdy-i-lokalizacja-przystankow-gtfs-wersja-rozszerzona" target="_blank" rel="noopener">GTFS dataset</a>, snapshot for 23 September 2026, CC BY.</p><p><b>Koleje Śląskie</b> — <a href="https://koleje-ks.pl/gtfs/2025-2026.zip" target="_blank" rel="noopener">2025–2026 GTFS feed</a>, downloaded 23 September 2026.</p>${populationCredit}<p><b>Rapid transit access</b> — derived from the active tram, rail and player metro stops in this scenario. Each colored 1 km cell uses straight-line distance from its center to the nearest such stop. It is not a walking route, travel-time estimate, capacity measure or observed dissatisfaction.</p><p><b>Past concepts</b> — three schematic line drafts drawn from a <a href="https://bip.metropoliagzm.pl/attachments/download/189291" target="_blank" rel="noopener">2018 GZM transport concept</a>. Draft stations are not surveyed alignments.</p><p><b>Basemap</b> — <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, delivered by <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p></div>
-      <h3>How the figures work</h3><p>${demandExplanation} Paths use stop sequences, walking transfers, interval estimates and mode speeds. A route's average initial wait is half its interval. Passenger count is a simulated transit share, never an observed count.</p><p>Satisfaction is an index based on modeled journey time, waiting and transfers. It does not provide geographically observed dissatisfaction, so no dissatisfaction mask is shown. Citywide wage was removed from the planning map because it cannot describe district-level conditions. Cost is route-kilometers × departures × assumed cost per kilometer (bus zł12, tram zł20, rail zł38, metro zł55). These values support relative experiments, not official forecasts.</p><p>Each imported route uses one representative GTFS shape per direction; branches and short turns are simplified. Ordinary player lines run both ways; rings run in the drawn order and include their closing segment. New lines and edited stops use direct segments. Play moves illustrative vehicles along route shapes, with estimated travel-time pacing and approximate frequency-based spacing; these are not real-time positions or an official timetable.</p><p><a href="./data/network.json" target="_blank">Open network</a> · <a href="./data/population-density.json" target="_blank">Open population grid</a></p>`);
+    const populationCredit = maskCells.length ? `<p><b>Population</b> — <a href="${escape(source.url || './data/population-density.json')}" target="_blank" rel="noopener">GUS 2021 resident grid</a>; ${escape(source.attribution || '')} The mask uses published 1 km polygons, including zero-resident cells. Cells are selected by their centers inside 43 <a href="https://mapy.geoportal.gov.pl/" target="_blank" rel="noopener">PRG municipal boundaries</a>, so totals are not exact full-municipality counts.</p>` : '';
+    const demandExplanation = state.stats?.demandPopulation ? `The selected 2021 grid contains ${format(state.stats.demandPopulation)} residents. We group them into ${sim.zones.length} municipality-based anchors. Origins use residential population; destinations use a separate estimate based on local density and proximity to the municipal population center. This is not an observed work, school or retail zoning dataset. At 0.6 assumed cross-zone trip opportunities per resident per day, this produces ${format(state.stats.demandTrips)} modeled opportunities.` : 'Population data is unavailable.';
+    modal(`<span class="chip">DATA & MODEL</span><h2>Real network. Estimated outcomes.</h2><p>The playable area covers all 41 GZM member municipalities, Jaworzno and Orzesze. Outlying endpoints provide transit context.</p>
+      <div class="modal-sources"><p><b>GZM ZTM</b> — <a href="https://otwartedane.metropoliagzm.pl/dataset/rozklady-jazdy-i-lokalizacja-przystankow-gtfs-wersja-rozszerzona" target="_blank" rel="noopener">GTFS dataset</a>, snapshot for 23 September 2026, CC BY.</p><p><b>Koleje Śląskie</b> — <a href="https://koleje-ks.pl/gtfs/2025-2026.zip" target="_blank" rel="noopener">2025–2026 GTFS feed</a>.</p><p><b>PKM Jaworzno</b> — <a href="https://www.pkm.jaworzno.pl/rozklady/start.php" target="_blank" rel="noopener">official timetable and route map</a>, retrieved 26 September 2026. Main timetable sequences omit indented branches and stops without published map coordinates. Pattern shapes use straight segments between stops; intervals are estimated from weekday departures. Source terms do not state a reusable feed license.</p>${populationCredit}<p><b>Rapid transit access</b> — straight-line distance from each cell center to the nearest active tram, rail or player metro stop.</p><p><b>Past concepts</b> — three schematic line drafts from a <a href="https://bip.metropoliagzm.pl/attachments/download/189291" target="_blank" rel="noopener">2018 GZM transport concept</a>.</p><p><b>Basemap</b> — <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, delivered by <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p></div>
+      <h3>How the figures work</h3><p>${demandExplanation} Paths use stop sequences, walking transfers, interval estimates and mode speeds. A route's average initial wait is half its interval. Passenger count is a simulated transit share, never an observed count.</p><p>Satisfaction is an index based on modeled journey time, which already includes waiting and transfer penalties. The local results are grouped by trip origin. Cost is route-kilometers × departures × assumed cost per kilometer (bus zł12, tram zł20, rail zł38, metro zł55). These values support relative experiments, not official forecasts.</p><p>Each GTFS route uses one representative shape per direction; branches and short turns are simplified. Ordinary player lines run both ways; rings run in the drawn order and include their closing segment. New lines, PKM patterns and edited stops use direct segments. Play moves illustrative vehicles, not real-time positions.</p><p><a href="./data/network.json" target="_blank">Open network</a> · <a href="./data/population-density.json" target="_blank">Open population grid</a></p>`);
   }
   function openGuide() {
-    modal(`<span class="chip">QUICK GUIDE</span><h2>Test an idea for GZM.</h2><ol><li><b>Explore</b> the real bus, tram and rail patterns. Click a line in the list or on the map.</li><li><b>Reduce map clutter</b> with the mode buttons in the map legend. They hide routes, stops and vehicles without changing the network.</li><li><b>Tinker</b> with its service interval, active state and stops. The stats compare your scenario with the baseline.</li><li><b>Build</b> a metro from map clicks, optionally close it into a one-direction ring, or load a documented past concept as an editable draft.</li><li><b>Plan</b> with resident density or tram-and-rail access layers. The side rails collapse desktop panels, which expand on hover or click; mobile tabs open map, network or line views.</li><li><b>Play</b> the illustrative vehicle animation. Use Undo, Reset, Export and Import to manage scenarios.</li></ol><p>Map: drag to pan, scroll or pinch to zoom. Right-click for location data, line actions and the ruler. While drawing, right-click a station to move or remove it, or middle-drag it. Click a stop to see its service intervals. Press F for fullscreen; Display settings can hide its button. Right-drag on empty map space to rotate.</p>`);
+    modal(`<span class="chip">QUICK GUIDE</span><h2>Test an idea for GZM.</h2><ol><li><b>Explore</b> the real bus, tram and rail patterns. Click a line in the list or on the map.</li><li><b>Reduce map clutter</b> with the mode buttons in the bottom-bar Layers menu. They hide routes, stops and vehicles without changing the network.</li><li><b>Tinker</b> with its service interval, active state and stops. The stats compare your scenario with the baseline.</li><li><b>Build</b> a metro from map clicks, optionally close it into a one-direction ring, or load a documented past concept as an editable draft.</li><li><b>Plan</b> with resident density or tram-and-rail access layers. The left rail collapses the single desktop panel, which expands on hover or click. Network, Inspect and Results share it; mobile tabs open the same views.</li><li><b>Play</b> the illustrative vehicle animation. Use Undo, Reset, Export and Import to manage scenarios.</li></ol><p>Map: drag to pan, scroll or pinch to zoom. Right-click for location data, line actions and the ruler. While drawing, right-click a station to move or remove it, or middle-drag it. Click a stop to see its service intervals. Press F for fullscreen; Display settings can hide its button. Right-drag on empty map space to rotate.</p>`);
   }
   function exportScenario() {
     const payload = { app: 'GZM Transit Lab', networkVersion: network.version, savedAt: new Date().toISOString(), ...JSON.parse(snapshot()) };
@@ -847,7 +935,10 @@
   $('route-list').onclick = e => { const card = e.target.closest('[data-route]'); if (card) card.dataset.route === state.selected ? clearSelection() : selectRoute(card.dataset.route); };
   $('template-list').onclick = e => { const button = e.target.closest('[data-template-id]'); if (button) loadTemplate(button.dataset.templateId); };
   $('network-rail').onclick = () => setPanel('network', !state.networkOpen);
-  $('inspector-rail').onclick = () => setPanel('inspector', !state.inspectorOpen);
+  document.querySelector('.panel-tabs').onclick = e => {
+    const tab = e.target.closest('[data-panel-tab]')?.dataset.panelTab;
+    if (tab) setPanelTab(tab);
+  };
   $('planning-layer').onchange = e => { closeContextMenu(); state.activeLayer = e.target.value; renderPopulationControl(); };
   $('map-context-menu').oncontextmenu = e => e.preventDefault();
   $('map-context-menu').onclick = e => {
@@ -911,6 +1002,10 @@
   $('fullscreen-button').onclick = toggleFullscreen;
   $('settings-button').onclick = openSettings;
   $('fit-button').onclick = fitFocus;
+  $('zoom-out-button').onclick = () => map.zoomOut({ duration: 250 });
+  $('zoom-in-button').onclick = () => map.zoomIn({ duration: 250 });
+  $('compass-button').onclick = () => map.easeTo({ bearing: 0, duration: 350 });
+  $('tilt-button').onclick = () => map.easeTo({ pitch: map.getPitch() > 10 ? 0 : 45, duration: 350 });
   $('undo-button').onclick = () => { if (!state.history.length) return; Object.assign(state, JSON.parse(state.history.pop())); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast('Last edit undone.'); };
   $('export-button').onclick = exportScenario;
   $('import-button').onclick = () => $('import-file').click();
@@ -920,7 +1015,7 @@
       const data = JSON.parse(await file.text());
       if (![network.version, ...LEGACY_VERSIONS].includes(data.networkVersion)) throw new Error('This scenario does not match a supported network snapshot.');
       const scenario = normalizeScenario(data);
-      remember(); Object.assign(state, scenario); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; changed(); toast(data.networkVersion !== network.version ? 'Earlier scenario imported into the eight-city snapshot.' : 'Scenario imported.');
+      remember(); Object.assign(state, scenario); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; changed(); toast(data.networkVersion !== network.version ? 'Earlier scenario imported into the metropolitan snapshot.' : 'Scenario imported.');
     } catch (err) { toast(err.message || 'Could not read this scenario.'); }
     e.target.value = '';
   };
@@ -932,10 +1027,11 @@
   $('mobile-menu-button').onclick = () => {
     modal('<span class="chip">SCENARIO</span><h2>Manage this sandbox</h2><div class="mobile-menu-actions"><button data-mobile-action="guide-button">Guide</button><button data-mobile-action="fullscreen-button">Toggle fullscreen</button><button data-mobile-action="settings-button">Display settings</button><button data-mobile-action="export-button">Export scenario</button><button data-mobile-action="import-button">Import scenario</button><button data-mobile-action="reset-button">Reset snapshot</button><button data-mobile-action="about-button">Data & model</button></div>');
   };
-  $('modal-content').onclick = e => { const button = e.target.closest('[data-mobile-action]'); if (button) { const id = button.dataset.mobileAction; closeModal(); $(id).click(); } };
+  $('modal-content').onclick = e => { const button = e.target.closest('[data-mobile-action]'); if (button) { const id = button.dataset.mobileAction; closeModal(); if (id === 'settings-button') openSettings(); else if (id === 'fullscreen-button') toggleFullscreen(); else $(id).click(); } };
   $('modal-close').onclick = closeModal; $('modal').onclick = e => { if (e.target === $('modal')) closeModal(); };
   document.onkeydown = e => {
     if (e.key === 'Escape') {
+      if ($('layers-menu').open) { $('layers-menu').open = false; $('layers-menu').querySelector('summary').focus(); return; }
       if (!$('map-context-menu').hidden) { closeContextMenu(); map.getCanvas().focus(); return; }
       if (!$('modal').hidden) { closeModal(); return; }
       if (rulerActive) { finishRuler(); return; }
@@ -1019,5 +1115,8 @@
     map.getSource('vehicles').setData(featureCollection(features));
   }
   renderTemplates(); renderList(); renderInspector();
-  setTimeout(() => { state.baseline = sim.calculate(network, [], [], {}); state.stats = sim.calculate(network, state.customRoutes, state.customStops, state.overrides); renderStats(); }, 30);
+  document.addEventListener('pointerdown', e => {
+    if (!$('layers-menu').contains(e.target)) $('layers-menu').open = false;
+  });
+  scheduleStats();
 })();

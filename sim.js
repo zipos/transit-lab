@@ -1,20 +1,9 @@
 /* Deterministic accessibility model. All outputs are estimates, never observed ridership. */
 (() => {
-  const zones = [
-    ['Katowice Centrum', 19.019, 50.259], ['Katowice Dąb', 19.001, 50.274],
-    ['Katowice Brynów', 18.998, 50.231], ['Katowice Ligota', 18.979, 50.226],
-    ['Katowice Zawodzie', 19.055, 50.258], ['Katowice Szopienice', 19.093, 50.258],
-    ['Chorzów Centrum', 18.956, 50.299], ['Chorzów Batory', 18.946, 50.277],
-    ['Chorzów Stary', 18.958, 50.316], ['Sosnowiec Centrum', 19.127, 50.279],
-    ['Sosnowiec Pogoń', 19.145, 50.294], ['Sosnowiec Zagórze', 19.178, 50.304],
-    ['Sosnowiec Niwka', 19.151, 50.244], ['Sosnowiec Dańdówka', 19.160, 50.265],
-    ['Siemianowice Centrum', 19.029, 50.300], ['Siemianowice Michałkowice', 19.004, 50.320],
-    ['Mysłowice Centrum', 19.132, 50.241], ['Mysłowice Brzęczkowice', 19.155, 50.218],
-    ['Mysłowice Wesoła', 19.108, 50.194],
-    ['Mikołów Centrum', 18.900, 50.172], ['Mikołów Zachód', 18.830, 50.192],
-    ['Łaziska Górne Centrum', 18.841, 50.149], ['Łaziska Średnie', 18.867, 50.135],
-    ['Orzesze Centrum', 18.778, 50.146], ['Orzesze Południe', 18.800, 50.090],
-  ];
+  const zones = [];
+  const zoneResidents = [];
+  const zoneAttraction = [];
+  const zoneCities = [];
   const speed = { bus: 22, tram: 25, rail: 48, metro: 42 };
   const capacity = { bus: 75, tram: 170, rail: 380, metro: 650 };
   const costPerKm = { bus: 12, tram: 20, rail: 38, metro: 55 };
@@ -26,27 +15,52 @@
     const x = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLon / 2) ** 2;
     return 12742 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
   }
-  // Fixed neighborhood anchors keep the path search small. Published grid residents,
-  // assigned to the nearest anchor, determine both origin and destination weights.
+  // Each municipality has at least one demand anchor; larger ones have two.
+  // Homes use the published residents. Daytime destinations are a transparent
+  // centrality/density proxy, not observed workplaces, schools or shops.
   const populationCells = window.GZM_POPULATION?.cells || [];
-  const zoneResidents = zones.map(() => 0);
+  const cellsByCity = new Map();
   for (const cell of populationCells) {
-    const residents = Number(cell.population);
-    if (!(residents > 0) || !Number.isFinite(+cell.lon) || !Number.isFinite(+cell.lat)) continue;
-    const point = [+cell.lon, +cell.lat];
-    let closest = 0, distance = Infinity;
-    for (let i = 0; i < zones.length; i++) {
-      const d = km(point, [zones[i][1], zones[i][2]]);
-      if (d < distance) { distance = d; closest = i; }
+    if (!(+cell.population > 0)) continue;
+    if (!cellsByCity.has(cell.city)) cellsByCity.set(cell.city, []);
+    cellsByCity.get(cell.city).push(cell);
+  }
+  for (const [city, cells] of cellsByCity) {
+    const total = cells.reduce((sum, c) => sum + +c.population, 0);
+    const count = total >= 80000 && cells.length > 1 ? 2 : 1;
+    const center = [cells.reduce((s, c) => s + c.lon * c.population, 0) / total, cells.reduce((s, c) => s + c.lat * c.population, 0) / total];
+    const seeds = [center];
+    if (count > 1) {
+      const far = cells.reduce((best, c) => c.population * km([c.lon, c.lat], center) > best.population * km([best.lon, best.lat], center) ? c : best);
+      seeds.push([far.lon, far.lat]);
     }
-    zoneResidents[closest] += residents;
+    const groups = Array.from({ length: count }, () => []);
+    for (const c of cells) {
+      const p = [c.lon, c.lat];
+      const idx = count === 1 || km(p, seeds[0]) <= km(p, seeds[1]) ? 0 : 1;
+      groups[idx].push(c);
+    }
+    for (const [index, group] of groups.entries()) {
+      if (!group.length) continue;
+      const residents = group.reduce((s, c) => s + +c.population, 0);
+      const lon = group.reduce((s, c) => s + c.lon * c.population, 0) / residents;
+      const lat = group.reduce((s, c) => s + c.lat * c.population, 0) / residents;
+      const density = group.reduce((s, c) => s + c.population * c.population, 0) / residents;
+      const centrality = 1 / (1 + km([lon, lat], center) / 7);
+      zones.push([count === 1 ? city : `${city} ${index + 1}`, lon, lat]);
+      zoneResidents.push(residents);
+      zoneAttraction.push(Math.sqrt(residents) * (0.6 + Math.log1p(density) / 8) * (0.7 + centrality));
+      zoneCities.push(city);
+    }
   }
   const residentTotal = zoneResidents.reduce((a, b) => a + b, 0);
   // 0.6 potential cross-neighborhood journeys per resident/day is a game
   // assumption, not a published travel survey result.
   const estimatedDemand = residentTotal > 0 ? Math.round(residentTotal * .6) : 90000;
   const meanResidents = residentTotal / zones.length || 1;
-  const zoneWeights = residentTotal > 0 ? zoneResidents.map(n => n / meanResidents) : zones.map(() => 1);
+  const originWeights = zoneResidents.map(n => n / meanResidents);
+  const meanAttraction = zoneAttraction.reduce((a, b) => a + b, 0) / zones.length || 1;
+  const destinationWeights = zoneAttraction.map(n => n / meanAttraction);
   class Heap {
     constructor() { this.a = []; }
     push(x) { const a = this.a; let i = a.length; a.push(x); while (i) { const p = (i - 1) >> 1; if (a[p][0] <= x[0]) break; a[i] = a[p]; i = p; } a[i] = x; }
@@ -126,11 +140,15 @@
         seatTrips += departures * capacity[r.mode];
       }
     }
+    const baseStopCount = network.stops.length;
     const zoneStops = zones.map(z => {
       const p = [z[1], z[2]];
-      return stops.map(s => [stopMap.get(s.id).index, km(p, s.pos)]).sort((a, b) => a[1] - b[1]).slice(0, 5).filter(x => x[1] < 1.4);
+      const nearby = (slice, offset) => slice.map((s, i) => [i + offset, km(p, s.pos)]).filter(x => x[1] < 1.4).sort((a, b) => a[1] - b[1]).slice(0, 8);
+      // New stops supplement access rather than pushing published stops out of a fixed cutoff.
+      return nearby(network.stops, 0).concat(nearby(customStops, baseStopCount));
     });
     let demandTotal = 0, riders = 0, satisfaction = 0, waitTotal = 0, travelTotal = 0, transferTotal = 0, reachedWeight = 0;
+    const local = Object.fromEntries([...new Set(zoneCities)].map(city => [city, { demand: 0, riders: 0, satisfaction: 0 }]));
     for (let i = 0; i < zones.length; i++) {
       const dist = new Float64Array(graph.length).fill(Infinity);
       const wait = new Float64Array(graph.length);
@@ -156,8 +174,9 @@
         if (i === j) continue;
         const straight = km([zones[i][1], zones[i][2]], [zones[j][1], zones[j][2]]);
         // Nearby destinations are more likely than equally populated distant ones.
-        const weight = zoneWeights[i] * zoneWeights[j] / (1 + straight / 6);
+        const weight = originWeights[i] * destinationWeights[j] / (1 + straight / 6);
         demandTotal += weight;
+        local[zoneCities[i]].demand += weight;
         let best = Infinity, bestNode = -1;
         for (const [idx, distance] of zoneStops[j]) {
           const time = dist[idx] + distance / 4.5 * 60;
@@ -168,13 +187,21 @@
         const reference = Math.max(8, straight / 28 * 60);
         const share = clamp(1 / (1 + Math.exp((best - reference * 1.65 - 11) / 8)), 0, 1);
         const served = weight * share;
-        const score = clamp(93 - (best - reference) * .72 - wait[bestNode] * .28 - Math.max(0, boards[bestNode] - 1) * 3, 8, 96);
+        // The route search already prices waiting and transfers into journey time.
+        const score = clamp(93 - (best - reference) * .72, 8, 96);
         riders += served; reachedWeight += served; satisfaction += score * served;
+        local[zoneCities[i]].riders += served;
+        local[zoneCities[i]].satisfaction += score * served;
         waitTotal += wait[bestNode] * served; travelTotal += best * served;
         transferTotal += Math.max(0, boards[bestNode] - 1) * served;
       }
     }
     const passengerCount = Math.round(estimatedDemand * riders / Math.max(1, demandTotal));
+    const cityStats = Object.fromEntries(Object.entries(local).map(([city, value]) => [city, {
+      passengers: Math.round(estimatedDemand * value.riders / Math.max(1, demandTotal)),
+      coverage: +(100 * value.riders / Math.max(1, value.demand)).toFixed(2),
+      satisfaction: +(value.satisfaction / Math.max(1, value.riders)).toFixed(2),
+    }]));
     return {
       demandPopulation: residentTotal,
       demandTrips: estimatedDemand,
@@ -185,8 +212,9 @@
       transfers: +(transferTotal / Math.max(1, reachedWeight)).toFixed(2),
       load: Math.round(clamp(passengerCount / Math.max(1, seatTrips) * 100, 0, 150)),
       cost: Math.round(serviceKm),
-      coverage: Math.round(riders / Math.max(1, demandTotal) * 100),
+      coverage: +(riders / Math.max(1, demandTotal) * 100).toFixed(2),
+      cityStats,
     };
   }
-  window.TransitSim = { calculate, km, zones };
+  window.TransitSim = { calculate, km, zones, zoneCities };
 })();

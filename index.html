@@ -5,26 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#121b23" media="(prefers-color-scheme: dark)">
-  <meta name="description" content="A public transport sandbox across Katowice, Chorzów, Sosnowiec, Siemianowice Śląskie, Mysłowice, Mikołów, Łaziska Górne and Orzesze. Edit real lines and draw new routes.">
+  <meta name="description" content="A public transport sandbox across the 41 GZM municipalities, Jaworzno and Orzesze. Edit real lines and draw new routes.">
   <title>GZM / Transit Lab</title>
   <link rel="stylesheet" href="./vendor/maplibre-gl.css">
-  <link rel="stylesheet" href="./styles.css?v=2026-09-25-rings-2">
+  <link rel="stylesheet" href="./styles.css?v=2026-09-26-region-2">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <script defer src="./vendor/maplibre-gl.js"></script>
-  <script defer src="./data/network.js?v=2026-09-23-gzm-v3"></script>
-  <script defer src="./data/population-density.js?v=2026-09-23-gzm-v3"></script>
+  <script defer src="./data/network.js?v=2026-09-26-region-2"></script>
+  <script defer src="./data/population-density.js?v=2026-09-23-gzm-v4"></script>
   <script defer src="./data/templates.js"></script>
-  <script defer src="./sim.js?v=2026-09-25-rings"></script>
-  <script defer src="./app.js?v=2026-09-25-rings"></script>
+  <script defer src="./sim.js?v=2026-09-26-region-2"></script>
+  <script defer src="./app.js?v=2026-09-26-region-2"></script>
 </head>
 <body>
-  <main id="map" aria-label="Map of Katowice, Chorzów, Sosnowiec, Siemianowice Śląskie, Mysłowice, Mikołów, Łaziska Górne and Orzesze"></main>
+  <main id="map" aria-label="Map of GZM, Jaworzno and Orzesze"></main>
   <div id="map-context-menu" class="map-context-menu" role="menu" aria-label="Map location actions" tabindex="-1" hidden></div>
 
   <header class="topbar">
     <div class="brand">GZM <span style="color:#8291a1;font-weight:600">/</span> TRANSIT LAB <span class="chip" style="margin-left:9px">Sandbox alpha</span></div>
     <div class="topbar-actions">
-      <span class="top-caption">Eight cities · one network</span>
+      <span class="top-caption">43 municipalities · one network</span>
       <button id="guide-button" title="How to play">Guide</button>
       <button id="fullscreen-button" type="button" title="Toggle fullscreen (F)" aria-label="Enter fullscreen">⛶ Fullscreen</button>
       <button id="settings-button" type="button" title="Display settings">⚙ Settings</button>
@@ -37,34 +37,29 @@
     </div>
   </header>
   <button id="network-rail" class="panel-rail panel-rail-left" type="button" aria-label="Hide network panel" aria-expanded="true">‹</button>
-  <button id="inspector-rail" class="panel-rail panel-rail-right" type="button" aria-label="Show inspector panel" aria-expanded="false">‹</button>
-  <nav class="mobile-tabs" aria-label="Mobile views"><button data-view="map" class="active" aria-pressed="true">Map</button><button data-view="network" aria-pressed="false">Network</button><button data-view="line" aria-pressed="false">Line</button></nav>
-  <div class="heatmap-control" aria-label="Planning layers">
-    <div class="heatmap-control__copy"><strong>Planning layer</strong><select id="planning-layer" aria-label="Choose planning layer"><option value="population">Resident density</option><option value="access">Tram &amp; rail access</option></select><small id="heatmap-caption">GUS resident population grid</small></div>
-    <button id="heatmap-toggle" class="heatmap-toggle" type="button" role="switch" aria-checked="true" aria-label="Show planning layer"><span aria-hidden="true">●</span> On</button>
-    <div id="heatmap-legend" aria-label="Planning layer scale"><span id="layer-legend-title">Residents per km² · 1 km cells</span><div class="heatmap-legend-scale"></div><div class="heatmap-legend-labels"><span id="layer-legend-min">0</span><span id="layer-legend-max">8,000+</span></div></div>
-  </div>
+  <nav class="mobile-tabs" aria-label="Mobile views"><button data-view="map" class="active" aria-pressed="true">Map</button><button data-view="network" aria-pressed="false">Network</button><button data-view="line" aria-pressed="false">Inspect</button><button data-view="results" aria-pressed="false">Results</button></nav>
   <div id="ruler-panel" class="ruler-panel" role="group" aria-label="Map ruler" hidden><div><span>MAP RULER</span><strong id="ruler-distance">0 m</strong><small id="ruler-hint">Click the map to add points.</small></div><button id="ruler-finish" type="button">Finish</button><button id="ruler-clear" type="button" aria-label="Clear ruler">×</button></div>
 
-  <aside class="sidebar" aria-label="Network tools and statistics">
-    <div class="panel-peek" aria-hidden="true"><span>NETWORK</span><strong id="network-peek-total">—</strong><small>lines</small></div>
-    <div class="section">
+  <aside class="sidebar" aria-label="Network, inspector and results">
+    <div class="panel-peek" aria-hidden="true"><span>NETWORK</span><strong id="network-peek-total">—</strong><small>patterns</small></div>
+    <div class="pulse-strip"><span><b id="pulse-passengers">—</b> trips</span><span><b id="pulse-satisfaction">—</b> satisfaction</span></div>
+    <nav class="panel-tabs" aria-label="Panel sections"><button type="button" data-panel-tab="network" class="active" aria-pressed="true">Network</button><button type="button" data-panel-tab="inspect" aria-pressed="false">Inspect</button><button type="button" data-panel-tab="results" aria-pressed="false">Results</button></nav>
+    <div class="section" data-panel-section="network">
       <div class="section-title"><h1>Shape the network</h1><span class="value" id="line-total">— lines</span></div>
       <p class="intro">Start with the published network. Change service, then test a metro of your own.</p>
       <div class="toolbar" style="margin-top:13px">
         <button class="primary" id="metro-tool">+ Draw metro line</button>
         <button id="undo-button" title="Undo the last change">↶ Undo</button>
-        <button id="fit-button" title="Fit the eight-city area">◎ Fit map</button>
       </div>
     </div>
 
-    <div class="section" id="template-section">
-      <div class="section-title"><h2>Explore past ideas</h2><span class="value">Documented concepts</span></div>
+    <details class="section past-ideas" id="template-section" data-panel-section="network">
+      <summary>Past ideas <span id="template-count">(3)</span></summary>
       <p class="intro">Load a historical proposal as an editable draft. Unsurveyed station sites are schematic.</p>
       <div id="template-list" class="template-list"></div>
-    </div>
+    </details>
 
-    <div class="section">
+    <div class="section" data-panel-section="network">
       <div class="section-title"><h2>Existing service</h2><span class="value" id="visible-total"></span></div>
       <div class="mode-filters" id="mode-filters">
         <button class="active" data-mode="all">All</button>
@@ -78,8 +73,8 @@
       <button id="more-routes" style="width:100%;margin-top:8px;display:none">Show more lines</button>
     </div>
 
-    <div class="section">
-      <div class="section-title"><h2>Network pulse</h2><span class="value">daily estimate</span></div>
+    <div class="section" data-panel-section="results">
+      <div class="section-title"><h2>Network results</h2><span class="value">daily estimate</span></div>
       <div class="stat-grid" id="stats">
         <div class="stat-card"><small>Passenger trips</small><strong id="stat-passengers">—</strong><span class="delta" id="delta-passengers">Model estimate</span></div>
         <div class="stat-card"><small>Satisfaction</small><strong id="stat-satisfaction">—</strong><span class="delta" id="delta-satisfaction">Model index</span></div>
@@ -87,29 +82,27 @@
         <div class="stat-card"><small>Operating cost</small><strong id="stat-cost">—</strong><span class="caption">PLN / simulated day</span></div>
       </div>
       <div id="secondary-stats" class="secondary-stats"></div>
+      <div id="local-results" class="local-results"></div>
       <p class="fine-print">Passenger demand and satisfaction are simulated, not measured. <button class="inline-link" id="model-link">How?</button></p>
     </div>
+    <div class="inspector" id="inspector" data-panel-section="inspect" aria-label="Selected line or metro builder"><span id="inspector-peek-label" hidden></span><span id="inspector-peek-kind" hidden></span><div id="inspector-content"></div></div>
   </aside>
 
-  <aside class="inspector" id="inspector" aria-label="Selected line or metro builder">
-    <div class="panel-peek" aria-hidden="true"><span>INSPECT</span><strong id="inspector-peek-label">＋</strong><small id="inspector-peek-kind">line</small></div>
-    <div id="inspector-content"></div>
-  </aside>
-
-  <div class="bottom-bar" aria-label="Simulation controls">
-    <button id="play-button" class="play" aria-pressed="false" title="Play or pause illustrative vehicle motion">▶ Play</button>
-    <span class="divider"></span>
-    <span id="sim-clock" class="sim-clock">07:00</span>
-    <button id="speed-button" title="Change simulation speed">1×</button>
-    <span class="divider"></span>
-    <span class="sim-visual-label">Illustrative motion</span>
-    <span id="snapshot-label" class="snapshot-label">23 Sep 2026 snapshot</span>
-  </div>
-  <div id="map-legend" class="map-legend" role="group" aria-label="Show or hide transport modes on the map">
+  <div class="bottom-bar" aria-label="Simulation and map controls">
+    <div class="bottom-group"><button id="play-button" class="play" aria-pressed="false" title="Play or pause illustrative vehicle motion">▶ Play</button><span id="sim-clock" class="sim-clock">07:00</span><button id="speed-button" title="Change simulation speed">1×</button></div>
+    <details class="layers-menu" id="layers-menu"><summary>Layers</summary><div class="layers-popover">
+    <div class="heatmap-control" aria-label="Planning layers">
+    <div class="heatmap-control__copy"><strong>Planning layer</strong><select id="planning-layer" aria-label="Choose planning layer"><option value="population">Resident density</option><option value="access">Tram &amp; rail access</option></select><small id="heatmap-caption">GUS resident population grid</small></div>
+    <button id="heatmap-toggle" class="heatmap-toggle" type="button" role="switch" aria-checked="true" aria-label="Show planning layer"><span aria-hidden="true">●</span> On</button>
+    <div id="heatmap-legend" aria-label="Planning layer scale"><span id="layer-legend-title">Residents per km² · 1 km cells</span><div class="heatmap-legend-scale"></div><div class="heatmap-legend-labels"><span id="layer-legend-min">0</span><span id="layer-legend-max">8,000+</span></div></div>
+    </div>
+    <div id="map-legend" class="map-legend" role="group" aria-label="Show or hide transport modes on the map">
     <button type="button" data-map-mode="tram" aria-pressed="true" aria-label="Hide tram routes on map" title="Hide tram routes"><i class="legend-tram" aria-hidden="true"></i>Tram</button>
     <button type="button" data-map-mode="bus" aria-pressed="true" aria-label="Hide bus routes on map" title="Hide bus routes"><i class="legend-bus" aria-hidden="true"></i>Bus</button>
     <button type="button" data-map-mode="rail" aria-pressed="true" aria-label="Hide rail routes on map" title="Hide rail routes"><i class="legend-rail" aria-hidden="true"></i>Rail</button>
     <button type="button" data-map-mode="metro" aria-pressed="true" aria-label="Hide metro routes on map" title="Hide metro routes"><i class="legend-metro" aria-hidden="true"></i>Metro</button>
+    </div></div></details>
+    <div class="bottom-group map-orientation"><button id="zoom-out-button" title="Zoom out" aria-label="Zoom out">−</button><button id="zoom-in-button" title="Zoom in" aria-label="Zoom in">+</button><button id="compass-button" title="Reset north" aria-label="Reset map orientation">◆</button><button id="tilt-button" title="Toggle map tilt" aria-label="Toggle map tilt">◩</button><button id="fit-button" title="Fit all 43 municipalities">◎ Fit</button></div>
   </div>
 
   <div id="loading" role="status"><span class="loader-dot"></span><strong>Opening the GZM network</strong><small>Loading map and service snapshot…</small></div>

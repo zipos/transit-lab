@@ -1,4 +1,4 @@
-/* Model invariants for the pinned eight-city snapshot. Run with Node.js. */
+/* Model invariants for the pinned metropolitan snapshot. Run with Node.js. */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -17,16 +17,24 @@ const straightFallback = sim.calculate({ ...network, routes: network.routes.map(
 const disabled = run([], Object.fromEntries(network.routes.map(route => [route.id, { active: false }])));
 const faster = run([], Object.fromEntries(network.routes.map(route => [route.id, { headway: Math.max(3, Math.floor(route.headway / 2)) }])));
 
-assert.equal(network.focus.length, 8);
-for (const city of ['Mikołów', 'Łaziska Górne', 'Orzesze']) {
+assert.equal(network.focus.length, 43);
+assert.equal(population.cities.length, 43);
+assert.ok(network.routes.some(route => route.source === 'pkm'));
+for (const city of ['Mikołów', 'Łaziska Górne', 'Orzesze', 'Jaworzno', 'Gliwice', 'Tychy']) {
   assert.ok(network.focus.includes(city));
   assert.ok(population.cities.some(entry => entry.name === city && entry.residentPopulationInSelectedCells > 0));
   const stopIds = new Set(network.stops.filter(stop => stop.name.startsWith(city)).map(stop => stop.id));
   assert.ok(stopIds.size > 0, `${city} should have published stops`);
   assert.ok(network.routes.some(route => route.stopIds.some(id => stopIds.has(id))), `${city} should have service`);
-  assert.ok(sim.zones.some(zone => zone[0].startsWith(city)), `${city} should affect the demand model`);
+  assert.ok(sim.zoneCities.includes(city), `${city} should affect the demand model`);
 }
+assert.equal(new Set(sim.zoneCities).size, 43);
 assert.equal(baseline.demandPopulation, population.totalPopulation);
+assert.equal(Object.keys(baseline.cityStats).length, 43, 'every municipality should have local results');
+const unservedStops = Array.from({ length: 12 }, (_, i) => ({ id: `test:unused:${i}`, name: 'Unused platform', pos: [sim.zones[0][1], sim.zones[0][2]] }));
+const unchanged = sim.calculate(network, [], unservedStops, {});
+assert.equal(unchanged.passengers, baseline.passengers, 'unused custom stops cannot crowd published stops out of zone access');
+assert.equal(unchanged.satisfaction, baseline.satisfaction);
 assert.notEqual(baseline.cost, straightFallback.cost, 'published route shapes should refine service distance estimates');
 assert.notEqual(baseline.passengers, straightFallback.passengers, 'shape-derived travel times should affect route choice');
 assert.equal(disabled.passengers, 0, 'walking-only paths cannot count as transit');
@@ -64,6 +72,17 @@ const twoWayOpenResult = sim.calculate(ringNetwork, [{ ...openRoute, source: 'pl
 assert.ok(ringResult.cost > openResult.cost, 'ring cost includes the closing segment');
 assert.ok(ringResult.cost < twoWayOpenResult.cost, 'a one-direction ring does not double-count reverse trips');
 assert.ok(Number.isInteger(ringResult.satisfaction * 100), 'satisfaction keeps hundredth-point precision');
+
+let workerResult;
+const worker = { window: {}, self: null };
+worker.self = worker;
+worker.importScripts = (...files) => files.forEach(file => vm.runInNewContext(fs.readFileSync(path.join(root, file.split('?')[0]), 'utf8'), worker, { filename: file }));
+worker.postMessage = message => { workerResult = message; };
+vm.runInNewContext(fs.readFileSync(path.join(root, 'sim-worker.js'), 'utf8'), worker, { filename: 'sim-worker.js' });
+worker.onmessage({ data: { revision: 7, customRoutes: [metro], customStops: [], overrides: {} } });
+assert.equal(workerResult.revision, 7);
+assert.deepEqual(JSON.parse(JSON.stringify(workerResult.baseline)), JSON.parse(JSON.stringify(baseline)), 'worker baseline matches direct calculation');
+assert.deepEqual(JSON.parse(JSON.stringify(workerResult.stats)), JSON.parse(JSON.stringify(extended)), 'worker scenario matches direct calculation');
 
 console.log('Simulation invariants passed', {
   baselinePassengers: baseline.passengers,
