@@ -18,9 +18,29 @@
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
   const state = { ...empty(), selected: null, selectedStop: null, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
   let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0;
+  let vehiclesActive = false, lastVehicleCount = 0;
+
+  const isDebug = typeof location !== 'undefined' && new URLSearchParams(location.search).get('debug') === '1';
+  const debugSourceCounts = {};
+  if (isDebug) {
+    window.__DEBUG__ = {
+      sourceCounts: debugSourceCounts,
+      lastFrameMs: 0,
+      lastVehicleCount: 0
+    };
+  }
+  function setSourceData(sourceId, data) {
+    const source = map?.getSource(sourceId);
+    if (!source) return;
+    if (isDebug) {
+      debugSourceCounts[sourceId] = (debugSourceCounts[sourceId] || 0) + 1;
+    }
+    source.setData(data);
+  }
 
   if (!network || !sim || !window.maplibregl) {
-    $('loading').innerHTML = '<strong>Could not open the game</strong><small>Check your internet connection, then reload. MapLibre and map tiles are loaded online.</small>';
+    $('loading')?.classList.add('failed');
+    $('loading').innerHTML = '<strong>Could not open the game</strong><small>Required game scripts failed to load. Please check your browser or local server and reload.</small>';
     return;
   }
 
@@ -28,9 +48,46 @@
   const focusBounds = population?.bbox || network.bbox || [18.88, 50.12, 19.33, 50.36];
   const fitFocus = () => map.fitBounds([[focusBounds[0], focusBounds[1]], [focusBounds[2], focusBounds[3]]], { padding: fitPadding(), maxZoom: 11.5, duration: 650 });
   function stop(id) { return byId.get(id) || state.customStops.find(s => s.id === id); }
-  function allRoutes() { return network.routes.concat(state.customRoutes).map(r => ({ ...r, ...(state.overrides[r.id] || {}) })); }
-  function routeById(id) { return allRoutes().find(r => r.id === id); }
-  function routeColor(r) { return r.color || colors[r.mode]; }
+
+  let routeCacheList = [];
+  let routeCacheMap = new Map();
+  let routeIndexMap = new Map();
+  function rebuildRouteCache() {
+    routeCacheList = network.routes.concat(state.customRoutes).map(r => ({ ...r, ...(state.overrides[r.id] || {}) }));
+    routeCacheMap = new Map(routeCacheList.map(r => [r.id, r]));
+    routeIndexMap = new Map(routeCacheList.map((r, i) => [r.id, i]));
+  }
+  rebuildRouteCache();
+  function allRoutes() { return routeCacheList; }
+  function routeById(id) { return routeCacheMap.get(id); }
+
+  function relativeLuminance(hex) {
+    if (!hex || typeof hex !== 'string') return null;
+    const clean = hex.trim().replace(/^#/, '');
+    let r, g, b;
+    if (clean.length === 3) {
+      r = parseInt(clean[0] + clean[0], 16) / 255;
+      g = parseInt(clean[1] + clean[1], 16) / 255;
+      b = parseInt(clean[2] + clean[2], 16) / 255;
+    } else if (clean.length === 6) {
+      r = parseInt(clean.slice(0, 2), 16) / 255;
+      g = parseInt(clean.slice(2, 4), 16) / 255;
+      b = parseInt(clean.slice(4, 6), 16) / 255;
+    } else {
+      return null;
+    }
+    if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return null;
+    const toLinear = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+  }
+  function routeColor(r) {
+    if (!r) return colors.bus;
+    const fallback = colors[r.mode] || '#15b8c7';
+    if (!r.color) return fallback;
+    const lum = relativeLuminance(r.color);
+    if (lum === null || lum < 0.03 || lum > 0.9) return fallback;
+    return r.color;
+  }
   const linePalette = ['#8068e8', '#0c98ac', '#d94e70', '#e88b23', '#2c9c70', '#a361cf', '#376fe0', '#d4673a', '#697ab4', '#bd4f9a'];
   function suggestLineColor(points = []) {
     const existing = state.customRoutes.map(r => ({ color: routeColor(r), points: r.stopIds.map(stop).filter(Boolean).map(s => s.pos) }));
@@ -83,6 +140,7 @@
     } catch (err) { toast(err.message || 'Could not read the saved scenario.'); }
   }
   loadSaved();
+  rebuildRouteCache();
   let showFullscreenButton = true;
   try { showFullscreenButton = JSON.parse(localStorage.getItem(DISPLAY_STORAGE) || '{}').showFullscreenButton !== false; } catch (_) {}
   function renderFullscreen() {
@@ -210,9 +268,25 @@
     attributionControl: false, antialias: true,
   });
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-  map.on('error', ev => { if (ev.error && /style|tile|fetch|network/i.test(ev.error.message || '')) $('loading')?.classList.add('failed'); });
+  map.on('error', ev => {
+    const err = ev?.error || ev;
+    const msg = String(err?.message || err || '');
+    const url = String(err?.url || ev?.url || '');
+    const isOpenFreeMap = /openfreemap/i.test(msg) || /openfreemap/i.test(url) || /openfreemap/i.test(mapStyle()) || !map.isStyleLoaded();
+    const loading = $('loading');
+    if (loading) {
+      loading.classList.add('failed');
+      if (isOpenFreeMap) {
+        loading.innerHTML = '<strong>Could not load OpenFreeMap tiles</strong><small>A request to OpenFreeMap (tiles.openfreemap.org) failed. The game files loaded, but the basemap could not be reached.</small>';
+      } else {
+        loading.innerHTML = '<strong>Could not load map</strong><small>MapLibre encountered an error loading map resources.</small>';
+      }
+    } else if (isOpenFreeMap && /tiles\.openfreemap\.org/i.test(msg + url)) {
+      toast('OpenFreeMap tiles failed to load.');
+    }
+  });
   const restoreGameLayers = () => {
-    if (!map.getStyle()?.layers || map.getLayer('routes')) return;
+    if (!map.getStyle()?.layers || map.getSource('city-population') || map.getLayer('routes')) return;
     if (themeMedia.matches) stylizeDarkBasemap(); else stylizeBasemap();
     addLayers(); renderMap();
   };
@@ -248,6 +322,10 @@
     paint('building', 'fill-color', '#e4e8e5');
     paint('building-3d', 'fill-extrusion-color', '#edf3f0');
     paint('building-3d', 'fill-extrusion-opacity', .86);
+    paint('selected-halo', 'line-color', '#10212b');
+    paint('selected-halo', 'line-opacity', 0.6);
+    paint('selected-stop-label', 'text-color', '#233746');
+    paint('selected-stop-label', 'text-halo-color', '#ffffff');
     for (const layer of map.getStyle().layers) {
       if (layer.type === 'line' && /road_/.test(layer.id) && !/rail/.test(layer.id)) {
         paint(layer.id, 'line-color', /casing/.test(layer.id) ? '#e1e5e2' : '#ffffff');
@@ -275,6 +353,10 @@
     for (const id of ['railway_dashline', 'railway_minor_dashline', 'railway_transit_dashline']) paint(id, 'line-color', '#536d77');
     paint('aeroway-taxiway', 'line-color', '#6d8790');
     paint('aeroway-runway', 'line-color', '#8ca1a8');
+    paint('selected-halo', 'line-color', '#ffffff');
+    paint('selected-halo', 'line-opacity', 0.98);
+    paint('selected-stop-label', 'text-color', '#e4f5f7');
+    paint('selected-stop-label', 'text-halo-color', '#13232c');
     for (const layer of map.getStyle().layers) {
       if (layer.type !== 'symbol') continue;
       const id = layer.id;
@@ -318,6 +400,7 @@
   }
   function pointFeature(s, properties = {}) { return { type: 'Feature', properties: { id: s.id, name: s.name, ...properties }, geometry: { type: 'Point', coordinates: s.pos } }; }
   function addLayers() {
+    if (map.getSource('city-population')) return;
     const before = map.getStyle().layers.find(layer => layer.type === 'symbol')?.id;
     const beneathRoads = map.getStyle().layers.find(layer => layer.id === 'road_pier')?.id || before;
     const visible = state.populationVisible ? 'visible' : 'none';
@@ -327,10 +410,10 @@
       : ['#e6f1e9', '#afdcd0', '#71c1c1', '#ffd090', '#f29a79', '#b8689e', '#704896'];
     map.addSource('city-population', { type: 'geojson', data: cityBoundaries });
     map.addSource('population-grid', { type: 'geojson', data: accessGrid().features });
-    map.addLayer({ id: 'city-population-fill', type: 'fill', source: 'city-population', layout: { visibility: visible }, paint: { 'fill-color': themeMedia.matches ? '#285360' : '#cae9e0', 'fill-opacity': .52 } }, beneathRoads);
+    map.addLayer({ id: 'city-population-fill', type: 'fill', source: 'city-population', layout: { visibility: visible }, paint: { 'fill-color': themeMedia.matches ? '#285360' : '#cae9e0', 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 9, .36, 11, .40, 13, .52] } }, beneathRoads);
     map.addLayer({ id: 'population-grid-fill', type: 'fill', source: 'population-grid', layout: { visibility: densityVisible }, paint: {
       'fill-color': ['interpolate', ['linear'], ['get', 'density'], 0, densityColors[0], 250, densityColors[1], 1000, densityColors[2], 2500, densityColors[3], 5000, densityColors[4], 8000, densityColors[5], 12000, densityColors[6]],
-      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 9, .72, 18, .59],
+      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 9, .48, 11, .52, 13, .68, 18, .59],
       'fill-antialias': true,
     } }, beneathRoads);
     const accessVisible = state.populationVisible && state.activeLayer === 'access' ? 'visible' : 'none';
@@ -339,7 +422,7 @@
       : ['#bce7d9', '#83cdb7', '#e4d796', '#efac78', '#d86f77'];
     map.addLayer({ id: 'access-grid-fill', type: 'fill', source: 'population-grid', layout: { visibility: accessVisible }, paint: {
       'fill-color': ['interpolate', ['linear'], ['get', 'accessM'], 0, accessColors[0], 400, accessColors[1], 900, accessColors[2], 1800, accessColors[3], 3000, accessColors[4]],
-      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 9, .76, 18, .64],
+      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 9, .52, 11, .56, 13, .72, 18, .64],
       'fill-antialias': true,
     } }, beneathRoads);
     map.addLayer({ id: 'city-population-outline', type: 'line', source: 'city-population', layout: { visibility: visible }, paint: {
@@ -357,9 +440,9 @@
     map.addSource('ruler-line', { type: 'geojson', data: featureCollection([]) });
     map.addSource('ruler-points', { type: 'geojson', data: featureCollection([]) });
     map.addSource('vehicles', { type: 'geojson', data: featureCollection([]) });
-    map.addLayer({ id: 'route-halo', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 5, 17, 9], 'line-opacity': .65 } }, before);
-    map.addLayer({ id: 'routes', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.15, 13, 2.1, 17, 4.1], 'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, ['case', ['==', ['get', 'active'], false], .08, ['==', ['get', 'mode'], 'bus'], .20, .65], 13, ['case', ['==', ['get', 'active'], false], .08, ['==', ['get', 'mode'], 'bus'], .45, .7]] } }, before);
-    map.addLayer({ id: 'selected-halo', type: 'line', source: 'selected-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 7, 15, 12], 'line-opacity': .98 } }, before);
+    map.addLayer({ id: 'route-halo', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 5, 17, 9], 'line-opacity': ['case', ['==', ['get', 'active'], false], 0, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.08, 11, 0.15, 14, 0.5, 17, 0.65], ['interpolate', ['linear'], ['zoom'], 9, 0.35, 11, 0.45, 14, 0.65, 17, 0.75]] } }, before);
+    map.addLayer({ id: 'routes', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 1.0, 11, 1.15, 13, 2.0, 17, 4.0], ['interpolate', ['linear'], ['zoom'], 9, 1.8, 11, 1.8, 13, 2.5, 17, 4.5]], 'line-opacity': ['case', ['==', ['get', 'active'], false], 0.08, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.25, 11, 0.25, 13, 0.45, 17, 0.70], ['interpolate', ['linear'], ['zoom'], 9, 0.85, 11, 0.85, 13, 0.88, 17, 0.92]] } }, before);
+    map.addLayer({ id: 'selected-halo', type: 'line', source: 'selected-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': themeMedia.matches ? '#ffffff' : '#10212b', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 7, 15, 12], 'line-opacity': themeMedia.matches ? 0.98 : 0.6 } }, before);
     map.addLayer({ id: 'selected-line', type: 'line', source: 'selected-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 15, 8], 'line-opacity': .95 } }, before);
     map.addLayer({ id: 'all-stops', type: 'circle', source: 'network-stops', minzoom: 13.1, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 2.2, 17, 5], 'circle-color': '#fff', 'circle-stroke-color': '#71879b', 'circle-stroke-width': 1.2, 'circle-opacity': .86 } });
     map.addLayer({ id: 'selected-stop-halo', type: 'circle', source: 'selected-stops', paint: { 'circle-radius': 9, 'circle-color': '#fff', 'circle-opacity': .9 } });
@@ -401,36 +484,48 @@
       button.setAttribute('aria-label', `${visible ? 'Hide' : 'Show'} ${label} routes on map`);
       button.title = `${visible ? 'Hide' : 'Show'} ${label} routes`;
     });
-    renderVehicles();
+    if (state.playing || vehiclesActive) renderVehicles();
   }
-  function renderMap() {
+  function renderNetwork() {
     if (!map.getSource('network-routes')) return;
     const previousAccessKey = accessCache?.key;
     const currentAccess = accessGrid();
-    if (previousAccessKey !== currentAccess.key) map.getSource('population-grid').setData(currentAccess.features);
+    if (previousAccessKey !== currentAccess.key) setSourceData('population-grid', currentAccess.features);
     const routes = allRoutes();
-    map.getSource('network-routes').setData(featureCollection(routes.map(routeFeature)));
-    const selected = routeById(state.selected);
-    map.getSource('selected-route').setData(featureCollection(selected ? [routeFeature(selected)] : []));
+    setSourceData('network-routes', featureCollection(routes.map(routeFeature)));
     const stopModes = new Map();
-    routes.forEach(route => route.stopIds.forEach(id => {
-      if (!stopModes.has(id)) stopModes.set(id, new Set());
-      stopModes.get(id).add(route.mode);
-    }));
-    map.getSource('network-stops').setData(featureCollection(network.stops.concat(state.customStops).map(s => pointFeature(s, { modes: [...(stopModes.get(s.id) || [])] }))));
-    map.getSource('selected-stops').setData(featureCollection(selected ? selected.stopIds.map(stop).filter(Boolean).map(s => pointFeature(s, { color: routeColor(selected), mode: selected.mode })) : []));
+    routes.forEach(route => {
+      if (route.active !== false) {
+        route.stopIds.forEach(id => {
+          let modes = stopModes.get(id);
+          if (!modes) { modes = new Set(); stopModes.set(id, modes); }
+          modes.add(route.mode);
+        });
+      }
+    });
+    setSourceData('network-stops', featureCollection(network.stops.concat(state.customStops).map(s => pointFeature(s, { modes: [...(stopModes.get(s.id) || [])] }))));
+    applyMapModeVisibility();
+  }
+  function renderSelection() {
+    if (!map.getSource('selected-route')) return;
+    const selected = routeById(state.selected);
+    setSourceData('selected-route', featureCollection(selected ? [routeFeature(selected)] : []));
+    setSourceData('selected-stops', featureCollection(selected ? selected.stopIds.map(stop).filter(Boolean).map(s => pointFeature(s, { color: routeColor(selected), mode: selected.mode })) : []));
     const inspected = stop(state.selectedStop);
-    map.getSource('inspected-stop').setData(featureCollection(inspected ? [pointFeature(inspected)] : []));
+    setSourceData('inspected-stop', featureCollection(inspected ? [pointFeature(inspected)] : []));
+  }
+  function renderMap() {
+    renderNetwork();
+    renderSelection();
     renderDraft();
     renderRuler();
-    applyMapModeVisibility();
   }
   function renderDraft() {
     if (!map.getSource('metro-draft')) return;
     const coords = state.draft.map(s => s.pos);
     if (state.draftRing && coords.length >= 3) coords.push(coords[0]);
-    map.getSource('metro-draft').setData(featureCollection(coords.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }] : []));
-    map.getSource('metro-draft-stops').setData(featureCollection(state.draft.map((s, i) => pointFeature({ ...s, id: String(i) }))));
+    setSourceData('metro-draft', featureCollection(coords.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }] : []));
+    setSourceData('metro-draft-stops', featureCollection(state.draft.map((s, i) => pointFeature({ ...s, id: String(i) }))));
     map.setPaintProperty('draft-line', 'line-color', state.draftColor);
     map.setPaintProperty('draft-stops', 'circle-color', state.draftColor);
   }
@@ -461,7 +556,7 @@
     const finalPos = nearby ? nearby.pos : pos;
     if (state.draft.some(s => sim.km(s.pos, finalPos) < .12)) return toast('Place stations at least 120 m apart.');
     state.draft.push({ name: nearby ? nearby.name : `Station ${state.draft.length + 1}`, pos: finalPos, schematic: !nearby, coordinateNote: nearby ? 'Snapped to a published transit stop.' : 'Player-placed map coordinate.' });
-    renderInspector(); renderMap(); toast(`${state.draft.length} station${state.draft.length === 1 ? '' : 's'} in line draft`);
+    renderInspector(); renderDraft(); toast(`${state.draft.length} station${state.draft.length === 1 ? '' : 's'} in line draft`);
   }
   function addExistingStop(pos) {
     const nearby = nearestStop(pos, .55);
@@ -484,7 +579,7 @@
     const finalPos = nearby ? nearby.pos : pos;
     if (state.draft.some((s, i) => i !== index && sim.km(s.pos, finalPos) < .12)) { renderDraft(); return toast('Place stations at least 120 m apart.'); }
     state.draft[index] = { ...current, pos: finalPos, schematic: !nearby, coordinateNote: nearby ? 'Snapped to a published transit stop after moving.' : 'Player-adjusted map coordinate.' };
-    renderInspector(); renderMap(); toast(`${current.name} moved.`);
+    renderInspector(); renderDraft(); toast(`${current.name} moved.`);
   }
   function draftIndexAt(point, maxPx = 20) {
     if (state.tool !== 'metro') return -1;
@@ -536,16 +631,16 @@
     const panel = $('ruler-panel');
     panel.hidden = !rulerPoints.length;
     if (!rulerPoints.length) {
-      map.getSource('ruler-line')?.setData(featureCollection([]));
-      map.getSource('ruler-points')?.setData(featureCollection([]));
+      setSourceData('ruler-line', featureCollection([]));
+      setSourceData('ruler-points', featureCollection([]));
       return;
     }
     const display = rulerActive && rulerHover ? rulerPoints.concat([rulerHover]) : rulerPoints;
     $('ruler-distance').textContent = formatRulerDistance(rulerDistance(display));
     $('ruler-hint').textContent = rulerActive ? 'Click map to add points · right-click for options' : 'Finished · right-click to extend or clear';
     $('ruler-finish').hidden = !rulerActive;
-    map.getSource('ruler-line')?.setData(featureCollection(display.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: display } }] : []));
-    map.getSource('ruler-points')?.setData(featureCollection(rulerPoints.map((pos, index) => pointFeature({ id: `ruler:${index}`, name: '', pos }))));
+    setSourceData('ruler-line', featureCollection(display.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: display } }] : []));
+    setSourceData('ruler-points', featureCollection(rulerPoints.map((pos, index) => pointFeature({ id: `ruler:${index}`, name: '', pos }))));
   }
   function startRuler(pos) { rulerPoints = [pos]; rulerHover = null; rulerActive = true; renderRuler(); toast('Ruler started. Click the map to add points.'); }
   function addRulerPoint(pos) {
@@ -667,19 +762,19 @@
     } else state.overrides[route.id] = { ...(state.overrides[route.id] || {}), [field]: value };
     changed();
   }
-  function changed() { persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); }
+  function changed() { rebuildRouteCache(); persist(); renderList(); renderInspector(); renderNetwork(); renderSelection(); scheduleStats(); }
   function clearSelection() {
     state.selected = null; state.selectedStop = null;
-    setPanelTab('network'); renderList(); renderInspector(); renderMap();
+    setPanelTab('network'); renderList(); renderInspector(); renderSelection();
   }
   function inspectStop(id) {
     if (!stop(id)) return;
     state.selected = null; state.selectedStop = id; state.tool = 'inspect';
     setMobileView('line'); if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false);
-    setPanel('inspector', true); renderList(); renderInspector(); renderMap();
+    setPanel('inspector', true); renderList(); renderInspector(); renderSelection();
   }
   function selectRoute(id) {
-    state.selected = id; state.selectedStop = null; state.tool = 'inspect'; state.draft = []; state.movingDraftIndex = null; setMobileView('line'); if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false); setPanel('inspector', true); renderList(); renderInspector(); renderMap();
+    state.selected = id; state.selectedStop = null; state.tool = 'inspect'; state.draft = []; state.movingDraftIndex = null; setMobileView('line'); if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false); setPanel('inspector', true); renderList(); renderInspector(); renderSelection();
     const r = routeById(id), points = (r?.geometry || []).flat();
     if (points.length > 1) {
       const bounds = new maplibregl.LngLatBounds(); points.forEach(p => bounds.extend(p));
@@ -735,7 +830,7 @@
     setMobileView('line');
     if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false);
     setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair';
-    renderList(); renderInspector(); renderMap();
+    renderList(); renderInspector(); renderDraft();
     const bounds = new maplibregl.LngLatBounds(); state.draft.forEach(s => bounds.extend(s.pos));
     map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 13.5, duration: 650 });
     toast(`${modeLabel(mode)} concept loaded as an editable draft.`);
@@ -766,15 +861,15 @@
       el.innerHTML = `<div class="section"><div class="section-title"><h2>${template ? 'PROPOSAL DRAFT' : 'NEW INFRASTRUCTURE'}</h2><span class="chip mode-${escape(state.draftMode)}">${escape(mode)}</span></div><h2 class="inspector-heading">${escape(heading)}</h2><p class="intro">${escape(intro)}</p><div class="form-stack"><label>Line name<input id="metro-name" maxlength="18" value="${escape(state.draftName)}"></label><div class="form-row"><label>Every · minutes<input id="metro-headway" type="number" min="3" max="60" value="${state.draftHeadway}"></label><label>Line color<input id="metro-color" type="color" value="${escape(state.draftColor)}"></label></div><button type="button" id="suggest-draft-color">Suggest color</button><label class="toggle-row"><input id="draft-ring" type="checkbox" ${state.draftRing ? 'checked' : ''}> Ring line · one continuous direction</label><small>Stops are served in drawn order, then the line returns to its first stop.</small></div></div>${sourceNote}<div class="section"><div class="section-title"><h3>Stations</h3><span class="value">${state.draft.length}</span></div><div class="stop-list">${state.draft.map((s, i) => `<div class="stop-row"><span class="stop-index">${i + 1}</span><span title="${escape(s.coordinateNote || '')}">${escape(s.name)}${s.schematic ? '<small class="source-note">Schematic location</small>' : ''}</span><button data-draft-remove="${i}" title="Remove station">×</button></div>`).join('') || '<p class="empty-state">Click on the map to begin.</p>'}</div><div class="toolbar" style="margin-top:14px"><button id="cancel-metro">Cancel</button><button id="finish-metro" class="primary" ${state.draft.length < (state.draftRing ? 3 : 2) ? 'disabled' : ''}>Open line</button></div></div><div class="section"><p class="fine-print">${escape(routeNote)}</p></div>`;
       $('metro-name').oninput = e => state.draftName = e.target.value;
       $('metro-headway').onchange = e => state.draftHeadway = Math.max(3, Math.min(60, Number(e.target.value) || 8));
-      $('metro-color').oninput = e => { state.draftColor = e.target.value; renderMap(); };
-      $('suggest-draft-color').onclick = () => { state.draftColor = suggestLineColor(state.draft.map(s => s.pos)); $('metro-color').value = state.draftColor; renderMap(); };
-      $('draft-ring').onchange = e => { state.draftRing = e.target.checked; renderInspector(); renderMap(); };
+      $('metro-color').oninput = e => { state.draftColor = e.target.value; renderDraft(); };
+      $('suggest-draft-color').onclick = () => { state.draftColor = suggestLineColor(state.draft.map(s => s.pos)); $('metro-color').value = state.draftColor; renderDraft(); };
+      $('draft-ring').onchange = e => { state.draftRing = e.target.checked; renderInspector(); renderDraft(); };
       el.querySelectorAll('[data-draft-remove]').forEach(button => {
         const station = state.draft[Number(button.dataset.draftRemove)];
         button.setAttribute('aria-label', `Remove ${station?.name || 'station'} from draft`);
       });
       $('finish-metro').onclick = createMetro;
-      $('cancel-metro').onclick = () => { state.tool = 'inspect'; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = null; state.draftMode = 'metro'; state.draftColor = colors.metro; map.getCanvas().style.cursor = ''; renderInspector(); renderMap(); };
+      $('cancel-metro').onclick = () => { state.tool = 'inspect'; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = null; state.draftMode = 'metro'; state.draftColor = colors.metro; map.getCanvas().style.cursor = ''; renderInspector(); renderDraft(); };
       return;
     }
     if (state.selectedStop) {
@@ -829,7 +924,7 @@
     const revert = $('revert-route-button'); if (revert) revert.onclick = () => { remember(); delete state.overrides[r.id]; changed(); toast('Line restored from source snapshot.'); };
     const del = $('delete-route-button'); if (del) del.onclick = () => { remember(); state.customRoutes = state.customRoutes.filter(x => x.id !== r.id); state.customStops = state.customStops.filter(s => !s.id.startsWith(r.id + ':')); state.selected = null; changed(); toast(`${modeLabel(r.mode)} line deleted.`); };
   }
-  function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderMap(); toast('Click the map to place metro stations.'); }
+  function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderSelection(); renderDraft(); toast('Click the map to place metro stations.'); }
 
   let statsWorker = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
   function scheduleStats() {
@@ -934,7 +1029,7 @@
     else if (action === 'inspect-stop' && nearby) { finishRuler(); inspectStop(nearby.id); }
     else if (action === 'add-stop' && nearby) { finishRuler(); addExistingStop(nearby.pos); }
     else if (action === 'move-stop' && draftIndex >= 0) { finishRuler(); state.movingDraftIndex = draftIndex; renderInspector(); toast(`Click the new position for ${state.draft[draftIndex].name}. Middle-drag also works.`); }
-    else if (action === 'remove-stop' && draftIndex >= 0) { finishRuler(); const [removed] = state.draft.splice(draftIndex, 1); state.movingDraftIndex = null; renderInspector(); renderMap(); toast(`${removed.name} removed from draft.`); }
+    else if (action === 'remove-stop' && draftIndex >= 0) { finishRuler(); const [removed] = state.draft.splice(draftIndex, 1); state.movingDraftIndex = null; renderInspector(); renderDraft(); toast(`${removed.name} removed from draft.`); }
     else if (action === 'metro') { finishRuler(); if (state.tool !== 'metro') enterMetroTool(); addDraftStation(pos); }
     else if (action === 'ruler') { if (rulerPoints.length) addRulerPoint(pos); else startRuler(pos); }
     else if (action === 'ruler-finish') finishRuler();
@@ -970,7 +1065,7 @@
     if (target.hasAttribute('data-clear-selection')) { clearSelection(); return; }
     if (target.dataset.inspectRoute) { selectRoute(target.dataset.inspectRoute); return; }
     if (target.dataset.inspectStop) { inspectStop(target.dataset.inspectStop); return; }
-    if (target.dataset.draftRemove != null) { state.draft.splice(Number(target.dataset.draftRemove), 1); state.movingDraftIndex = null; renderInspector(); renderMap(); return; }
+    if (target.dataset.draftRemove != null) { state.draft.splice(Number(target.dataset.draftRemove), 1); state.movingDraftIndex = null; renderInspector(); renderDraft(); return; }
     const r = routeById(state.selected); if (!r) return;
     const ids = r.stopIds.slice(); let i, j;
     if (target.dataset.stopUp != null) { i = Number(target.dataset.stopUp); j = i - 1; }
@@ -990,7 +1085,7 @@
   $('zoom-in-button').onclick = () => map.zoomIn({ duration: 250 });
   $('compass-button').onclick = () => map.easeTo({ bearing: 0, duration: 350 });
   $('tilt-button').onclick = () => map.easeTo({ pitch: map.getPitch() > 10 ? 0 : 45, duration: 350 });
-  $('undo-button').onclick = () => { if (!state.history.length) return; Object.assign(state, normalizeScenario(parseScenario(state.history.pop()))); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast('Last edit undone.'); };
+  $('undo-button').onclick = () => { if (!state.history.length) return; Object.assign(state, normalizeScenario(parseScenario(state.history.pop()))); rebuildRouteCache(); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast('Last edit undone.'); };
   $('export-button').onclick = exportScenario;
   $('import-button').onclick = () => $('import-file').click();
   $('import-file').onchange = async e => {
@@ -1027,7 +1122,7 @@
         if (state.draft.length && !confirm('Discard this in-progress line?')) return;
         state.tool = 'inspect'; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = null; state.draftMode = 'metro'; state.draftColor = colors.metro;
         map.getCanvas().style.cursor = '';
-        renderInspector(); renderMap();
+        renderInspector(); renderDraft();
       }
       return;
     }
@@ -1045,17 +1140,108 @@
     if (!editing && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFullscreen(); return; }
     if (!editing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); $('undo-button').click(); }
   };
+  const routeGeomCache = new Map();
+  function getRouteGeometryData(r) {
+    const cached = routeGeomCache.get(r.id);
+    if (cached && cached.geomRef === r.geometry) return cached;
+    const segmentList = [];
+    let length = 0;
+    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    if (Array.isArray(r.geometry)) {
+      for (const line of r.geometry) {
+        if (!Array.isArray(line)) continue;
+        for (let j = 1; j < line.length; j++) {
+          const p1 = line[j - 1], p2 = line[j];
+          const distance = sim.km(p1, p2);
+          if (distance > 0) {
+            segmentList.push(p1[0], p1[1], p2[0], p2[1], length, distance);
+            length += distance;
+            if (p1[0] < minLng) minLng = p1[0];
+            if (p1[0] > maxLng) maxLng = p1[0];
+            if (p1[1] < minLat) minLat = p1[1];
+            if (p1[1] > maxLat) maxLat = p1[1];
+            if (p2[0] < minLng) minLng = p2[0];
+            if (p2[0] > maxLng) maxLng = p2[0];
+            if (p2[1] < minLat) minLat = p2[1];
+            if (p2[1] > maxLat) maxLat = p2[1];
+          }
+        }
+      }
+    }
+    const count = segmentList.length / 6;
+    const starts = new Float64Array(count);
+    const dists = new Float64Array(count);
+    const coords = new Float64Array(count * 4);
+    for (let i = 0; i < count; i++) {
+      coords[i * 4] = segmentList[i * 6];
+      coords[i * 4 + 1] = segmentList[i * 6 + 1];
+      coords[i * 4 + 2] = segmentList[i * 6 + 2];
+      coords[i * 4 + 3] = segmentList[i * 6 + 3];
+      starts[i] = segmentList[i * 6 + 4];
+      dists[i] = segmentList[i * 6 + 5];
+    }
+    const data = {
+      geomRef: r.geometry,
+      count,
+      length,
+      starts,
+      dists,
+      coords,
+      bbox: count > 0 ? [minLng, minLat, maxLng, maxLat] : null
+    };
+    routeGeomCache.set(r.id, data);
+    return data;
+  }
+
+  function findSegmentIndex(starts, dists, at, count) {
+    let low = 0, high = count - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const s = starts[mid];
+      const e = s + dists[mid];
+      if (at < s) high = mid - 1;
+      else if (at >= e) low = mid + 1;
+      else return mid;
+    }
+    return Math.max(0, Math.min(count - 1, low));
+  }
+
+  function clearVehicles() {
+    vehiclesActive = false;
+    lastVehicleCount = 0;
+    if (isDebug) window.__DEBUG__.lastVehicleCount = 0;
+    setSourceData('vehicles', featureCollection([]));
+  }
+
+  $('sim-clock').title = 'Click to reset simulation time and clear vehicles';
+  $('sim-clock').onclick = () => {
+    state.minutes = 420;
+    state.elapsedMinutes = 0;
+    $('sim-clock').textContent = '07:00';
+    if (!state.playing) {
+      clearVehicles();
+    }
+  };
+
   $('play-button').onclick = () => {
     state.playing = !state.playing;
     $('play-button').textContent = state.playing ? 'Ⅱ Pause' : '▶ Play';
     $('play-button').setAttribute('aria-pressed', String(state.playing));
-    if (state.playing) { lastFrame = 0; animationFrame = requestAnimationFrame(frame); }
-    else { cancelAnimationFrame(animationFrame); animationFrame = 0; }
+    if (state.playing) {
+      vehiclesActive = true;
+      lastFrame = 0;
+      renderVehicles();
+      animationFrame = requestAnimationFrame(frame);
+    } else {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+    }
   };
   $('speed-button').onclick = () => { state.speed = ({ 1: 4, 4: 12, 12: 1 })[state.speed]; $('speed-button').textContent = `${state.speed}×`; };
 
   function frame(timestamp) {
     if (!state.playing) return;
+    const frameStart = isDebug ? performance.now() : 0;
     if (!lastFrame) lastFrame = timestamp;
     const dt = Math.min(100, timestamp - lastFrame); lastFrame = timestamp;
     const advance = dt / 1000 * state.speed;
@@ -1065,40 +1251,90 @@
     const clock = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     if ($('sim-clock').textContent !== clock) $('sim-clock').textContent = clock;
     if (timestamp - lastVehicles > 170) { renderVehicles(); lastVehicles = timestamp; }
+    if (isDebug) {
+      const dur = performance.now() - frameStart;
+      window.__DEBUG__.lastFrameMs = dur;
+      if (Math.random() < 0.02) console.log(`[debug] frame: ${dur.toFixed(2)}ms, vehicles: ${lastVehicleCount}`);
+    }
     animationFrame = requestAnimationFrame(frame);
   }
+
+  const modeSpeed = { bus: 22, tram: 25, rail: 48, metro: 42 };
+  const modePriority = { metro: 0, rail: 1, tram: 2, bus: 3 };
+
   function renderVehicles() {
     if (!map.getSource('vehicles')) return;
-    const routes = allRoutes().filter(r => state.mapModes[r.mode] && r.active !== false && r.geometry?.some(seg => seg?.length > 1));
-    const picked = [...routes.filter(r => r.mode === 'metro'), ...routes.filter(r => r.mode === 'tram').slice(0, 12), ...routes.filter(r => r.mode === 'rail').slice(0, 8), ...routes.filter(r => r.mode === 'bus').slice(0, 10)];
-    const modeSpeed = { bus: 22, tram: 25, rail: 48, metro: 42 };
-    const features = picked.flatMap((r, i) => {
-      const edges = [];
-      let length = 0;
-      for (const line of r.geometry) {
-        if (!Array.isArray(line)) continue;
-        for (let j = 1; j < line.length; j++) {
-          const distance = sim.km(line[j - 1], line[j]);
-          if (distance > 0) { edges.push({ a: line[j - 1], b: line[j], start: length, distance }); length += distance; }
-        }
+    if (!state.playing && !vehiclesActive) return;
+
+    let minLng = -Infinity, maxLng = Infinity, minLat = -Infinity, maxLat = Infinity;
+    try {
+      const bounds = map.getBounds();
+      if (bounds) {
+        const marginX = (bounds.getEast() - bounds.getWest()) * 0.2;
+        const marginY = (bounds.getNorth() - bounds.getSouth()) * 0.2;
+        minLng = bounds.getWest() - marginX;
+        maxLng = bounds.getEast() + marginX;
+        minLat = bounds.getSouth() - marginY;
+        maxLat = bounds.getNorth() + marginY;
       }
-      if (!edges.length) return [];
+    } catch (_) {}
+
+    const routes = allRoutes().filter(r => state.mapModes[r.mode] && r.active !== false && r.geometry?.length);
+    const visibleRoutes = [];
+    for (const r of routes) {
+      const geom = getRouteGeometryData(r);
+      if (!geom.bbox || geom.length <= 0) continue;
+      if (geom.bbox[0] > maxLng || geom.bbox[2] < minLng || geom.bbox[1] > maxLat || geom.bbox[3] < minLat) {
+        continue;
+      }
+      visibleRoutes.push({ route: r, geom });
+    }
+
+    visibleRoutes.sort((a, b) => {
+      const pDiff = (modePriority[a.route.mode] ?? 9) - (modePriority[b.route.mode] ?? 9);
+      if (pDiff !== 0) return pDiff;
+      const hA = Number(a.route.headway) || 30;
+      const hB = Number(b.route.headway) || 30;
+      return hA - hB;
+    });
+
+    const maxVehicles = (typeof innerWidth !== 'undefined' && innerWidth <= 600) ? 200 : 800;
+    const features = [];
+
+    for (const { route: r, geom } of visibleRoutes) {
+      if (features.length >= maxVehicles) break;
+      const length = geom.length;
       const tripMinutes = Math.max(4, length / (modeSpeed[r.mode] || 22) * 60);
       const headway = Math.max(3, Number(r.headway) || 30);
       const bothWays = r.source === 'player' && !r.ring;
-      const count = Math.min(4, Math.max(bothWays ? 2 : 1, Math.ceil(tripMinutes / headway) * (bothWays ? 2 : 1)));
-      return Array.from({ length: count }, (_, vehicle) => {
-        const sideCount = bothWays ? count / 2 : count;
+      const targetCount = Math.min(4, Math.max(bothWays ? 2 : 1, Math.ceil(tripMinutes / headway) * (bothWays ? 2 : 1)));
+      const count = Math.min(targetCount, maxVehicles - features.length);
+      const routeIdx = routeIndexMap.get(r.id) ?? 0;
+
+      for (let vehicle = 0; vehicle < count; vehicle++) {
+        const sideCount = bothWays ? targetCount / 2 : targetCount;
         const reverse = bothWays && vehicle % 2 === 1;
         const sideIndex = bothWays ? Math.floor(vehicle / 2) : vehicle;
-        const phase = ((state.elapsedMinutes / tripMinutes + sideIndex / sideCount + (i * .618 % 1) / sideCount) % 1 + 1) % 1;
+        const phase = ((state.elapsedMinutes / tripMinutes + sideIndex / sideCount + (routeIdx * .618 % 1) / sideCount) % 1 + 1) % 1;
         const at = (reverse ? 1 - phase : phase) * length;
-        const edge = edges.find(item => at < item.start + item.distance) || edges[edges.length - 1];
-        const t = Math.max(0, Math.min(1, (at - edge.start) / edge.distance));
-        return { type: 'Feature', id: `${r.id}:${vehicle}`, properties: { color: routeColor(r), mode: r.mode }, geometry: { type: 'Point', coordinates: [edge.a[0] + (edge.b[0] - edge.a[0]) * t, edge.a[1] + (edge.b[1] - edge.a[1]) * t] } };
-      });
-    });
-    map.getSource('vehicles').setData(featureCollection(features));
+        const k = findSegmentIndex(geom.starts, geom.dists, at, geom.count);
+        const start = geom.starts[k];
+        const dist = geom.dists[k];
+        const t = dist > 0 ? Math.max(0, Math.min(1, (at - start) / dist)) : 0;
+        const ax = geom.coords[k * 4], ay = geom.coords[k * 4 + 1];
+        const bx = geom.coords[k * 4 + 2], by = geom.coords[k * 4 + 3];
+        features.push({
+          type: 'Feature',
+          id: `${r.id}:${vehicle}`,
+          properties: { color: routeColor(r), mode: r.mode },
+          geometry: { type: 'Point', coordinates: [ax + (bx - ax) * t, ay + (by - ay) * t] }
+        });
+      }
+    }
+
+    lastVehicleCount = features.length;
+    if (isDebug) window.__DEBUG__.lastVehicleCount = lastVehicleCount;
+    setSourceData('vehicles', featureCollection(features));
   }
   renderTemplates(); renderList(); renderInspector();
   document.addEventListener('pointerdown', e => {
