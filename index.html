@@ -5,27 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#121b23" media="(prefers-color-scheme: dark)">
-  <meta name="description" content="A public transport sandbox across the 41 GZM municipalities, Jaworzno and Orzesze. Edit real lines and draw new routes.">
-  <title>GZM / Transit Lab</title>
+  <meta name="description" content="A public transport sandbox. Edit real lines and draw new routes.">
+  <title>Transit Lab</title>
   <link rel="stylesheet" href="./vendor/maplibre-gl.css">
-  <link rel="stylesheet" href="./styles.css?v=2026-09-28-intro">
+  <link rel="stylesheet" href="./styles.css?v=2026-09-28-region">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <script defer src="./vendor/maplibre-gl.js"></script>
-  <script defer src="./data/network.js?v=2026-09-26-region-2"></script>
-  <script defer src="./data/population-density.js?v=2026-09-23-gzm-v4"></script>
-  <script defer src="./data/templates.js"></script>
-  <script defer src="./sim.js?v=2026-09-26-region-2"></script>
-  <script defer src="./scenario.js"></script>
-  <script defer src="./app.js?v=2026-09-28-intro"></script>
+  <script defer src="./boot.js?v=2026-09-28-region-picker"></script>
 </head>
 <body>
-  <main id="map" aria-label="Map of GZM, Jaworzno and Orzesze"></main>
+  <main id="map" aria-label="Map"></main>
   <div id="map-context-menu" class="map-context-menu" role="menu" aria-label="Map location actions" tabindex="-1" hidden></div>
 
   <header class="topbar">
-    <div class="brand">GZM <span style="color:#8291a1;font-weight:600">/</span> TRANSIT LAB <span class="chip" style="margin-left:9px">Sandbox alpha</span></div>
+    <div class="brand">TRANSIT LAB <span class="chip" style="margin-left:9px">Sandbox alpha</span></div>
     <div class="topbar-actions">
-      <span class="top-caption">43 municipalities · one network</span>
+      <span class="top-caption"></span>
       <button id="guide-button" title="How to play">Guide</button>
       <button id="fullscreen-button" type="button" title="Toggle fullscreen (F)" aria-label="Enter fullscreen">⛶ Fullscreen</button>
       <button id="settings-button" type="button" title="Display settings">⚙ Settings</button>
@@ -103,10 +98,10 @@
     <button type="button" data-map-mode="rail" aria-pressed="true" aria-label="Hide rail routes on map" title="Hide rail routes"><i class="legend-rail" aria-hidden="true"></i>Rail</button>
     <button type="button" data-map-mode="metro" aria-pressed="true" aria-label="Hide metro routes on map" title="Hide metro routes"><i class="legend-metro" aria-hidden="true"></i>Metro</button>
     </div></div></details>
-    <div class="bottom-group map-orientation"><button id="zoom-out-button" title="Zoom out" aria-label="Zoom out">−</button><button id="zoom-in-button" title="Zoom in" aria-label="Zoom in">+</button><button id="compass-button" title="Reset north" aria-label="Reset map orientation">◆</button><button id="tilt-button" title="Toggle map tilt" aria-label="Toggle map tilt">◩</button><button id="fit-button" title="Fit all 43 municipalities">◎ Fit</button></div>
+    <div class="bottom-group map-orientation"><button id="zoom-out-button" title="Zoom out" aria-label="Zoom out">−</button><button id="zoom-in-button" title="Zoom in" aria-label="Zoom in">+</button><button id="compass-button" title="Reset north" aria-label="Reset map orientation">◆</button><button id="tilt-button" title="Toggle map tilt" aria-label="Toggle map tilt">◩</button><button id="fit-button" title="Fit the region">◎ Fit</button></div>
   </div>
 
-  <div id="loading" role="status"><span class="loader-dot"></span><strong>Opening the GZM network</strong><small>Loading map and service snapshot…</small></div>
+  <div id="loading" role="status"><span class="loader-dot"></span><strong>Opening the network</strong><small>Loading map and service snapshot…</small></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <div id="modal" class="modal" hidden><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button id="modal-close" class="modal-close" aria-label="Close dialog">×</button><div id="modal-content"></div></div></div>
 </body>

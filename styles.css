@@ -2576,6 +2576,10 @@ body[data-network-open='false'] .bottom-bar { left: 56px; }
 .intro-coach h2 { margin: 2px 0 6px; font-size: 16px; }
 .intro-coach p { margin: 0; color: var(--ink-soft, #5d7082); font-size: 13px; line-height: 1.4; }
 .intro-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.region-picker { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(18, 27, 35, .45); }
+.region-picker-card { width: min(420px, calc(100vw - 32px)); padding: 22px; border-radius: 16px; background: var(--surface-solid, #fff); }
+.region-picker-list { display: grid; gap: 8px; margin-top: 12px; }
+.region-picker-list button { display: flex; justify-content: space-between; min-height: 48px; }
 @media (max-width: 600px) { .daypart-caption { display: none; } }
 .bottom-group .sim-clock { margin-inline: 6px; }
 .map-orientation button { min-width: 35px; padding-inline: 8px; }

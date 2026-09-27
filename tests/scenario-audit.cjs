@@ -5,10 +5,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const context = { window: {}, URL };
-for (const file of ['data/network.js', 'data/templates.js', 'scenario.js']) {
-  vm.runInNewContext(fs.readFileSync(path.join(root, file), 'utf8'), context, { filename: file });
-}
-const { GZM_NETWORK: network, GZM_TEMPLATES: { templates }, TransitScenario: { normalize, safeUrl, safeColor } } = context.window;
+context.window.TRANSIT_NETWORK = JSON.parse(fs.readFileSync(path.join(root, 'data/gzm/network.json'), 'utf8'));
+context.window.TRANSIT_TEMPLATES = JSON.parse(fs.readFileSync(path.join(root, 'regions/gzm/templates.json'), 'utf8'));
+vm.runInNewContext(fs.readFileSync(path.join(root, 'scenario.js'), 'utf8'), context, { filename: 'scenario.js' });
+const network = context.window.TRANSIT_NETWORK;
+const templates = context.window.TRANSIT_TEMPLATES.templates;
+const { TransitScenario: { normalize, safeUrl, safeColor } } = context.window;
 const clone = value => JSON.parse(JSON.stringify(value));
 const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
 assert.equal(normalize(empty()).daypart, 'peak');
@@ -114,7 +116,7 @@ const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const messages = [];
 const elements = { 'import-file': {} };
 const saved = new Map();
-const loader = { window: context.window, Blob, network, LEGACY_VERSIONS: ['2026-09-23-gzm-v4', '2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'], STORAGE: 'test-current', state: {}, toast: message => messages.push(message), $: id => elements[id], remember: () => {}, changed: () => {}, persist: () => {}, localStorage: { getItem: key => saved.get(key) || null } };
+const loader = { window: context.window, Blob, network, region: { id: 'gzm', name: { en: 'Upper Silesian Metropolis' } }, LEGACY_VERSIONS: ['2026-09-23-gzm-v4', '2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'], STORAGE: 'test-current', state: {}, toast: message => messages.push(message), $: id => elements[id], remember: () => {}, changed: () => {}, persist: () => {}, localStorage: { getItem: key => saved.get(key) || null } };
 vm.createContext(loader);
 vm.runInContext(app.slice(app.indexOf('  const { safeUrl }'), app.indexOf('  loadSaved();')), loader);
 vm.runInContext(app.slice(app.indexOf("  $('import-file').onchange"), app.indexOf("  $('reset-button').onclick")), loader);
@@ -146,7 +148,7 @@ const importFile = async (data, size) => {
   vm.runInContext('loadSaved()', loader);
   assert.deepEqual(clone(loader.state.customRoutes), cleaned.customRoutes);
   saved.delete('test-current');
-  saved.set('gzm-transit-lab:2026-09-23-gzm-v1', JSON.stringify(sample()));
+  saved.set('transit-lab:gzm:2026-09-23-gzm-v1', JSON.stringify(sample()));
   vm.runInContext('loadSaved()', loader);
   assert.equal(loader.state.customRoutes[0].id, 'metro:legacy');
   saved.set('test-current', ' '.repeat(5 * 1024 * 1024 + 1));

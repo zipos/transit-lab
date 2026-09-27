@@ -1,0 +1,20 @@
+[
+  {
+    "id": "gzm",
+    "name": {
+      "pl": "Górnośląsko-Zagłębiowska Metropolia",
+      "en": "Upper Silesian Metropolis"
+    },
+    "center": [
+      19.104,
+      50.239
+    ],
+    "bbox": [
+      18.3327446,
+      49.9990556,
+      19.512647,
+      50.5543633
+    ],
+    "status": "live"
+  }
+]

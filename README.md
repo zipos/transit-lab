@@ -1,4 +1,4 @@
-# GZM / Transit Lab
+# Transit Lab
 
 A browser sandbox for all 41 GZM member municipalities, Jaworzno and Orzesze, using Transport GZM, PKM Jaworzno and Koleje Śląskie service. It includes bus, tram and regional rail patterns; you can edit service and stops, draw metro lines, load historical proposals, and compare modeled results. Orzesze is outside GZM membership, but appears in the published GZM and regional rail feeds. The interface follows the system light or dark setting.
 
@@ -10,7 +10,9 @@ TODO(screenshot): add current light and dark screenshots in `docs/` after brief 
 python3 -m http.server 8765
 ```
 
-Open [localhost:8765](http://localhost:8765). On Windows, use `py -m http.server 8765`. The processed snapshots are committed, so playing needs no data download or build step. OpenFreeMap basemap tiles need internet access.
+Open [localhost:8765](http://localhost:8765). On Windows, use `py -m http.server 8765`. The processed snapshots are committed, so playing needs no data download or build step. OpenFreeMap basemap tiles need internet access. Opening the HTML file directly (`file://`) no longer works, because the app fetches each region's JSON.
+
+`python3 data/build_region.py gzm` rebuilds `data/gzm/network.json` from the pinned sources and writes `data/gzm/manifest.lock.json`.
 
 Changes save in the browser's local storage. **Export** and **Import** move scenario JSON between browsers; earlier eight-city, five-city and three-city saves still load. Use Undo and Reset to manage experiments. Player lines serve both directions; rings run continuously in drawn order. Historical concepts are editable schematic drafts, not approved alignments.
 

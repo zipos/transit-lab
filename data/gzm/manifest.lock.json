@@ -1,0 +1,17 @@
+{
+  "region": "gzm",
+  "networkVersion": "2026-09-23-gzm-v5",
+  "network": {
+    "sha256": "a0690dc46290a97a270b28ff83b150b17cad58eb09478889cc2bf09c3e8c5c50",
+    "routes": 978,
+    "stops": 7233
+  },
+  "population": {
+    "sha256": "1549dd685aa33e304dc99e457202b13dc115ee43f51294e9562092b7c01efed0",
+    "residents": 2237684,
+    "cities": 43
+  },
+  "templates": {
+    "sha256": "9f00a928233009f59501b315a34a8a88967c4ffa4491613571135604914dbf18"
+  }
+}

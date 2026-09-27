@@ -1,0 +1,232 @@
+{
+  "id": "gzm",
+  "name": {
+    "pl": "Górnośląsko-Zagłębiowska Metropolia",
+    "en": "Upper Silesian Metropolis"
+  },
+  "shortName": {
+    "pl": "GZM",
+    "en": "GZM"
+  },
+  "networkVersion": "2026-09-23-gzm-v5",
+  "serviceDate": "20260923",
+  "center": [
+    19.104,
+    50.239
+  ],
+  "zoom": 9.7,
+  "bbox": [
+    18.3327446,
+    49.9990556,
+    19.512647,
+    50.5543633
+  ],
+  "defaultResultArea": "Katowice",
+  "legacyStoragePrefix": "gzm-transit-lab:",
+  "legacyNetworkVersions": [
+    "2026-09-23-gzm-v4",
+    "2026-09-23-gzm-v3",
+    "2026-09-23-gzm-v2",
+    "2026-09-23-gzm-v1"
+  ],
+  "feedLabels": {
+    "ztm": "GZM ZTM",
+    "ks": "Koleje Śląskie",
+    "pkm": "PKM Jaworzno"
+  },
+  "municipalities": [
+    {
+      "teryt": "2401011",
+      "name": "Będzin"
+    },
+    {
+      "teryt": "2401021",
+      "name": "Czeladź"
+    },
+    {
+      "teryt": "2401031",
+      "name": "Wojkowice"
+    },
+    {
+      "teryt": "2401042",
+      "name": "Bobrowniki"
+    },
+    {
+      "teryt": "2401052",
+      "name": "Mierzęcice"
+    },
+    {
+      "teryt": "2401062",
+      "name": "Psary"
+    },
+    {
+      "teryt": "2401073",
+      "name": "Siewierz"
+    },
+    {
+      "teryt": "2401081",
+      "name": "Sławków"
+    },
+    {
+      "teryt": "2405011",
+      "name": "Knurów"
+    },
+    {
+      "teryt": "2405021",
+      "name": "Pyskowice"
+    },
+    {
+      "teryt": "2405032",
+      "name": "Gierałtowice"
+    },
+    {
+      "teryt": "2405042",
+      "name": "Pilchowice"
+    },
+    {
+      "teryt": "2405052",
+      "name": "Rudziniec"
+    },
+    {
+      "teryt": "2405063",
+      "name": "Sośnicowice"
+    },
+    {
+      "teryt": "2408011",
+      "name": "Łaziska Górne"
+    },
+    {
+      "teryt": "2408021",
+      "name": "Mikołów"
+    },
+    {
+      "teryt": "2408031",
+      "name": "Orzesze"
+    },
+    {
+      "teryt": "2408052",
+      "name": "Wyry"
+    },
+    {
+      "teryt": "2410022",
+      "name": "Kobiór"
+    },
+    {
+      "teryt": "2413031",
+      "name": "Radzionków"
+    },
+    {
+      "teryt": "2413041",
+      "name": "Tarnowskie Góry"
+    },
+    {
+      "teryt": "2413062",
+      "name": "Ożarowice"
+    },
+    {
+      "teryt": "2413072",
+      "name": "Świerklaniec"
+    },
+    {
+      "teryt": "2413092",
+      "name": "Zbrosławice"
+    },
+    {
+      "teryt": "2414011",
+      "name": "Bieruń"
+    },
+    {
+      "teryt": "2414021",
+      "name": "Imielin"
+    },
+    {
+      "teryt": "2414031",
+      "name": "Lędziny"
+    },
+    {
+      "teryt": "2414042",
+      "name": "Bojszowy"
+    },
+    {
+      "teryt": "2414052",
+      "name": "Chełm Śląski"
+    },
+    {
+      "teryt": "2462011",
+      "name": "Bytom"
+    },
+    {
+      "teryt": "2463011",
+      "name": "Chorzów"
+    },
+    {
+      "teryt": "2465011",
+      "name": "Dąbrowa Górnicza"
+    },
+    {
+      "teryt": "2466011",
+      "name": "Gliwice"
+    },
+    {
+      "teryt": "2468011",
+      "name": "Jaworzno"
+    },
+    {
+      "teryt": "2469011",
+      "name": "Katowice"
+    },
+    {
+      "teryt": "2470011",
+      "name": "Mysłowice"
+    },
+    {
+      "teryt": "2471011",
+      "name": "Piekary Śląskie"
+    },
+    {
+      "teryt": "2472011",
+      "name": "Ruda Śląska"
+    },
+    {
+      "teryt": "2474011",
+      "name": "Siemianowice Śląskie"
+    },
+    {
+      "teryt": "2475011",
+      "name": "Sosnowiec"
+    },
+    {
+      "teryt": "2476011",
+      "name": "Świętochłowice"
+    },
+    {
+      "teryt": "2477011",
+      "name": "Tychy"
+    },
+    {
+      "teryt": "2478011",
+      "name": "Zabrze"
+    }
+  ],
+  "feeds": [
+    {
+      "id": "gzm-ztm",
+      "kind": "gtfs",
+      "sourceRef": "gzm-ztm"
+    },
+    {
+      "id": "koleje-slaskie",
+      "kind": "gtfs",
+      "sourceRef": "koleje-slaskie"
+    },
+    {
+      "id": "pkm-jaworzno",
+      "kind": "pkm-snapshot",
+      "sourceRef": "pkm-jaworzno"
+    }
+  ],
+  "demand": {
+    "zoneTarget": 450,
+    "tripRate": 0.6
+  }
+}

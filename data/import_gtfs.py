@@ -6,6 +6,7 @@ import io
 import json
 import math
 import re
+import sys
 from datetime import datetime, timedelta
 from collections import defaultdict
 from pathlib import Path
@@ -22,7 +23,7 @@ SOURCES = [
 ]
 PKM_SNAPSHOT = HERE / "sources" / CATALOG["pkm-jaworzno"]["filename"]
 PKM_SHA256 = CATALOG["pkm-jaworzno"]["sha256"]
-POPULATION = json.loads((HERE / "population-density.json").read_text(encoding="utf-8"))
+POPULATION = json.loads((HERE / "gzm" / "population.json").read_text(encoding="utf-8"))
 CORE = tuple(POPULATION["bbox"])
 BBOX = (CORE[0] - .025, CORE[1] - .018, CORE[2] + .025, CORE[3] + .018)
 CITY_GEOMETRIES = []
@@ -32,6 +33,22 @@ for feature in POPULATION["cityBoundaries"]["features"]:
     bounds = (min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
     center = ((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2)
     CITY_GEOMETRIES.append((feature["properties"]["name"], polygons, bounds, center))
+
+
+def gtfs_mode(route_type):
+    try:
+        code = int(route_type)
+    except (TypeError, ValueError):
+        return None
+    if code in {0} or 900 <= code <= 906:
+        return "tram"
+    if code in {2} or 100 <= code <= 117:
+        return "rail"
+    if code in {1, 12} or 400 <= code <= 405:
+        return "metro"
+    if code in {3, 11} or 700 <= code <= 716:
+        return "bus"
+    return None
 
 
 def km(a, b):
@@ -371,7 +388,7 @@ def load_source(source, path):
         candidates = []
 
         def mode_of(route):
-            return {"0": "tram", "2": "rail", "3": "bus", "11": "bus"}.get(route.get("route_type"))
+            return gtfs_mode(route.get("route_type"))
 
         if has_direction:
             for route_id, trip_ids in by_route.items():
@@ -586,10 +603,11 @@ def main():
         "stops": stops,
         "areas": areas,
     }
-    destination = HERE / "network.json"
+    destination_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "gzm"
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / "network.json"
     compact = json.dumps(output, ensure_ascii=False, separators=(",", ":"))
     destination.write_text(compact, encoding="utf-8")
-    (HERE / "network.js").write_text("window.GZM_NETWORK=" + compact + ";\n", encoding="utf-8")
     print(destination, destination.stat().st_size, "bytes")
 
 

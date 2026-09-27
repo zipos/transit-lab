@@ -17,8 +17,8 @@
 
   function normalize(data, onWarning = () => {}) {
     if (!record(data) || !record(data.overrides) || !Array.isArray(data.customRoutes) || !Array.isArray(data.customStops)) throw new Error('This file is not a valid network scenario.');
-    const network = window.GZM_NETWORK;
-    const templates = new Map((window.GZM_TEMPLATES?.templates || []).map(template => [template.id, template]));
+    const network = window.TRANSIT_NETWORK;
+    const templates = new Map((window.TRANSIT_TEMPLATES?.templates || []).map(template => [template.id, template]));
     const published = new Map(network.routes.map(route => [route.id, route]));
     const entries = Object.entries(data.overrides);
     const limit = (length, max, name) => {

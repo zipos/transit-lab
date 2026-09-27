@@ -23,8 +23,7 @@ SOURCES = HERE / "sources"
 CATALOG = {source["id"]: source for source in load_sources()}
 GRID_ZIP = SOURCES / CATALOG["gus-resident-grid"]["filename"]
 BOUNDARIES = SOURCES / CATALOG["prg-boundaries"]["filename"]
-JSON_OUT = HERE / "population-density.json"
-JS_OUT = HERE / "population-density.js"
+JSON_OUT = HERE / "gzm" / "population.json"
 
 GRID_SHA256 = CATALOG["gus-resident-grid"]["sha256"]
 BOUNDARIES_SHA256 = CATALOG["prg-boundaries"]["sha256"]
@@ -369,8 +368,8 @@ def build_data():
 def main():
     data, source_rows = build_data()
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    JSON_OUT.parent.mkdir(parents=True, exist_ok=True)
     JSON_OUT.write_text(payload + "\n", encoding="utf-8")
-    JS_OUT.write_text("window.GZM_POPULATION=" + payload + ";\n", encoding="utf-8")
     print(
         json.dumps(
             {
@@ -379,7 +378,6 @@ def main():
                 "totalPopulation": data["totalPopulation"],
                 "cities": data["cities"],
                 "jsonBytes": JSON_OUT.stat().st_size,
-                "jsBytes": JS_OUT.stat().st_size,
             },
             ensure_ascii=False,
             indent=2,

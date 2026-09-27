@@ -1,9 +1,5 @@
 /* Deterministic accessibility model. All outputs are estimates, never observed ridership. */
 (() => {
-  const zones = [];
-  const zoneResidents = [];
-  const zoneAttraction = [];
-  const zoneCities = [];
   const speed = { bus: 22, tram: 25, rail: 48, metro: 42 };
   const capacity = { bus: 75, tram: 170, rail: 380, metro: 650 };
   const costPerKm = { bus: 12, tram: 20, rail: 38, metro: 55 };
@@ -15,10 +11,15 @@
     const x = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLon / 2) ** 2;
     return 12742 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
   }
+  function createModel(network, population, options = {}) {
+  const zones = [];
+  const zoneResidents = [];
+  const zoneAttraction = [];
+  const zoneCities = [];
   // Each municipality has at least one demand anchor; larger ones have two.
   // Homes use the published residents. Daytime destinations are a transparent
   // centrality/density proxy, not observed workplaces, schools or shops.
-  const populationCells = window.GZM_POPULATION?.cells || [];
+  const populationCells = population?.cells || [];
   const cellsByCity = new Map();
   for (const cell of populationCells) {
     if (!(+cell.population > 0)) continue;
@@ -56,7 +57,8 @@
   const residentTotal = zoneResidents.reduce((a, b) => a + b, 0);
   // 0.6 potential cross-neighborhood journeys per resident/day is a game
   // assumption, not a published travel survey result.
-  const estimatedDemand = residentTotal > 0 ? Math.round(residentTotal * .6) : 90000;
+  const tripRate = Number(options.tripRate) > 0 ? Number(options.tripRate) : 0.6;
+  const estimatedDemand = residentTotal > 0 ? Math.round(residentTotal * tripRate) : 90000;
   const meanResidents = residentTotal / zones.length || 1;
   const originWeights = zoneResidents.map(n => n / meanResidents);
   const meanAttraction = zoneAttraction.reduce((a, b) => a + b, 0) / zones.length || 1;
@@ -250,5 +252,7 @@
       cityStats,
     };
   }
-  window.TransitSim = { calculate, km, zones, zoneCities, resolveService };
+  return { calculate, km, zones, zoneCities, resolveService };
+  }
+  window.TransitSim = { createModel, km };
 })();

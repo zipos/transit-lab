@@ -6,11 +6,10 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const context = { window: {} };
-for (const file of ['data/network.js', 'data/population-density.js', 'sim.js']) {
-  vm.runInNewContext(fs.readFileSync(path.join(root, file), 'utf8'), context, { filename: file });
-}
-
-const { GZM_NETWORK: network, GZM_POPULATION: population, TransitSim: sim } = context.window;
+vm.runInNewContext(fs.readFileSync(path.join(root, 'sim.js'), 'utf8'), context, { filename: 'sim.js' });
+const network = JSON.parse(fs.readFileSync(path.join(root, 'data/gzm/network.json'), 'utf8'));
+const population = JSON.parse(fs.readFileSync(path.join(root, 'data/gzm/population.json'), 'utf8'));
+const sim = context.window.TransitSim.createModel(network, population);
 assert.equal(network.version, '2026-09-23-gzm-v5');
 assert.equal(network.serviceDates.ztm.saturday, null, 'the pinned ZTM extract has no Saturday service');
 assert.equal(network.serviceDates.ks.saturday, '20260926');
@@ -109,10 +108,11 @@ assert.ok(Number.isInteger(ringResult.satisfaction * 100), 'satisfaction keeps h
 let workerResult;
 const worker = { window: {}, self: null };
 worker.self = worker;
+worker.window = worker;
 worker.importScripts = (...files) => files.forEach(file => vm.runInNewContext(fs.readFileSync(path.join(root, file.split('?')[0]), 'utf8'), worker, { filename: file }));
 worker.postMessage = message => { workerResult = message; };
 vm.runInNewContext(fs.readFileSync(path.join(root, 'sim-worker.js'), 'utf8'), worker, { filename: 'sim-worker.js' });
-worker.onmessage({ data: { revision: 7, customRoutes: [metro], customStops: [], overrides: {} } });
+worker.onmessage({ data: { revision: 7, network, population, customRoutes: [metro], customStops: [], overrides: {} } });
 assert.equal(workerResult.revision, 7);
 assert.deepEqual(JSON.parse(JSON.stringify(workerResult.baseline)), JSON.parse(JSON.stringify(baseline)), 'worker baseline matches direct calculation');
 assert.deepEqual(JSON.parse(JSON.stringify(workerResult.stats)), JSON.parse(JSON.stringify(extended)), 'worker scenario matches direct calculation');
