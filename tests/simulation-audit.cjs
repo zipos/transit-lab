@@ -1,15 +1,11 @@
 /* Model invariants for the pinned metropolitan snapshot. Run with Node.js. */
+(async () => {
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
-
 const root = path.resolve(__dirname, '..');
-const context = { window: {} };
-vm.runInNewContext(fs.readFileSync(path.join(root, 'sim.js'), 'utf8'), context, { filename: 'sim.js' });
 const network = JSON.parse(fs.readFileSync(path.join(root, 'data/gzm/network.json'), 'utf8'));
 const population = JSON.parse(fs.readFileSync(path.join(root, 'data/gzm/population.json'), 'utf8'));
-const sim = context.window.TransitSim.createModel(network, population);
 assert.equal(network.version, '2026-09-23-gzm-v5');
 assert.equal(network.serviceDates.ztm.saturday, null, 'the pinned ZTM extract has no Saturday service');
 assert.equal(network.serviceDates.ks.saturday, '20260926');
@@ -34,6 +30,9 @@ for (const route of network.routes) {
   }
 }
 assert.ok(network.routes.filter(route => route.source === 'ks' && route.name === 'S1').length >= 3, 'S1 short turns stay in the network');
+const { createModel } = await import('../src/sim/model.js');
+const { runJob } = await import('../src/sim/worker.js');
+const sim = createModel(network, population);
 const run = (routes = [], overrides = {}) => sim.calculate(network, routes, [], overrides);
 const baseline = run();
 const straightFallback = sim.calculate({ ...network, routes: network.routes.map(route => ({ ...route, edited: true })) }, [], [], {});
@@ -106,13 +105,7 @@ assert.ok(ringResult.cost < twoWayOpenResult.cost, 'a one-direction ring does no
 assert.ok(Number.isInteger(ringResult.satisfaction * 100), 'satisfaction keeps hundredth-point precision');
 
 let workerResult;
-const worker = { window: {}, self: null };
-worker.self = worker;
-worker.window = worker;
-worker.importScripts = (...files) => files.forEach(file => vm.runInNewContext(fs.readFileSync(path.join(root, file.split('?')[0]), 'utf8'), worker, { filename: file }));
-worker.postMessage = message => { workerResult = message; };
-vm.runInNewContext(fs.readFileSync(path.join(root, 'sim-worker.js'), 'utf8'), worker, { filename: 'sim-worker.js' });
-worker.onmessage({ data: { revision: 7, network, population, customRoutes: [metro], customStops: [], overrides: {} } });
+runJob({ revision: 7, network, population, customRoutes: [metro], customStops: [], overrides: {} }, message => { workerResult = message; });
 assert.equal(workerResult.revision, 7);
 assert.deepEqual(JSON.parse(JSON.stringify(workerResult.baseline)), JSON.parse(JSON.stringify(baseline)), 'worker baseline matches direct calculation');
 assert.deepEqual(JSON.parse(JSON.stringify(workerResult.stats)), JSON.parse(JSON.stringify(extended)), 'worker scenario matches direct calculation');
@@ -123,3 +116,4 @@ console.log('Simulation invariants passed', {
   fasterPassengers: faster.passengers,
   metroPassengers: extended.passengers,
 });
+})().catch(error => { console.error(error); process.exitCode = 1; });

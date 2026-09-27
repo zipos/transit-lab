@@ -1,4 +1,5 @@
 /* Scenario trust-boundary and loader regressions. Run with Node.js. */
+(async () => {
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -7,10 +8,11 @@ const root = path.resolve(__dirname, '..');
 const context = { window: {}, URL };
 context.window.TRANSIT_NETWORK = JSON.parse(fs.readFileSync(path.join(root, 'data/gzm/network.json'), 'utf8'));
 context.window.TRANSIT_TEMPLATES = JSON.parse(fs.readFileSync(path.join(root, 'regions/gzm/templates.json'), 'utf8'));
-vm.runInNewContext(fs.readFileSync(path.join(root, 'scenario.js'), 'utf8'), context, { filename: 'scenario.js' });
+globalThis.window = context.window;
+const { normalize, safeUrl, safeColor } = await import('../src/scenario.js');
+context.window.TransitScenario = { normalize, safeUrl, safeColor };
 const network = context.window.TRANSIT_NETWORK;
 const templates = context.window.TRANSIT_TEMPLATES.templates;
-const { TransitScenario: { normalize, safeUrl, safeColor } } = context.window;
 const clone = value => JSON.parse(JSON.stringify(value));
 const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
 assert.equal(normalize(empty()).daypart, 'peak');
@@ -112,7 +114,7 @@ assert.throws(() => normalize(tooManyOverrides), new RegExp(`overrides.*${networ
 for (const data of [null, [], {}, { overrides: [], customRoutes: [], customStops: [] }]) assert.throws(() => normalize(data), /valid network scenario/);
 
 // Exercise the actual file/local-storage loader code without map or simulation mocks.
-const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
 const messages = [];
 const elements = { 'import-file': {} };
 const saved = new Map();
@@ -155,4 +157,5 @@ const importFile = async (data, size) => {
   vm.runInContext('loadSaved()', loader);
   assert.match(messages.at(-1), /file size limit \(5 MB\)/);
   console.log('Scenario audit passed: whitelist, hostile fixture, limits, loaders and v1–v4 exports.');
+})().catch(error => { console.error(error); process.exitCode = 1; });
 })().catch(error => { console.error(error); process.exitCode = 1; });

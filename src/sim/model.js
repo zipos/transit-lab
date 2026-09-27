@@ -1,9 +1,7 @@
 /* Deterministic accessibility model. All outputs are estimates, never observed ridership. */
-(() => {
-  const speed = { bus: 22, tram: 25, rail: 48, metro: 42 };
-  const capacity = { bus: 75, tram: 170, rail: 380, metro: 650 };
-  const costPerKm = { bus: 12, tram: 20, rail: 38, metro: 55 };
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+import { modes, cruiseSpeed, capacity as seats, costPerKm as rate } from '../modes.js';
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const rad = Math.PI / 180;
   function km(a, b) {
     const dLat = (b[1] - a[1]) * rad;
@@ -168,12 +166,12 @@
             const next = (i + 1) % direction.length;
             const distance = km(direction[i].pos, direction[next].pos) * distanceFactor;
             length += distance;
-            const ride = useTimes && next > i ? Math.max(.3, service.times[next] - service.times[i]) : .55 + distance / speed[r.mode] * 60;
+            const ride = useTimes && next > i ? Math.max(.3, service.times[next] - service.times[i]) : modes[r.mode].dwell + distance / cruiseSpeed[r.mode] * 60;
             edge(onboard[i], onboard[next], ride);
           }
         }
-        serviceKm += length * departures * costPerKm[r.mode];
-        seatTrips += departures * capacity[r.mode];
+        serviceKm += length * departures * rate[r.mode];
+        seatTrips += departures * seats[r.mode];
       }
     }
     const baseStopCount = network.stops.length;
@@ -254,5 +252,4 @@
   }
   return { calculate, km, zones, zoneCities, resolveService };
   }
-  window.TransitSim = { createModel, km };
-})();
+export { createModel, km };

@@ -1,10 +1,27 @@
-(() => {
+import { loadRegion, reportRegionError } from './region.js';
+import { createModel } from './sim/model.js';
+import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js';
+import { colors, modeLabel, cruiseSpeed } from './modes.js';
+import { renderRouteList } from './ui/list.js';
+import { renderDraftInspector } from './ui/draft.js';
+import { renderStopInspector } from './ui/inspector-stop.js';
+import { renderLineInspector } from './ui/inspector-line.js';
+import { renderResults } from './ui/results.js';
+import { createModal } from './ui/modal.js';
+
+window.TransitScenario = { normalize, safeUrl: scenarioSafeUrl, safeColor };
+
+async function startApp() {
+  let loaded;
+  try { loaded = await loadRegion(); }
+  catch (error) { reportRegionError(error); return; }
+  if (!loaded) return;
   'use strict';
   const region = window.TRANSIT_REGION;
   const network = window.TRANSIT_NETWORK;
   const population = window.TRANSIT_POPULATION;
   const templates = window.TRANSIT_TEMPLATES?.templates || [];
-  const sim = window.TransitSim.createModel(network, population, { tripRate: region.demand?.tripRate });
+  const sim = createModel(network, population, { tripRate: region.demand?.tripRate });
   const densityCells = Array.isArray(population?.cells) ? population.cells.filter(c => Number.isFinite(+c.lon) && Number.isFinite(+c.lat) && Number.isFinite(+c.density) && +c.density > 0) : [];
   const maskCells = Array.isArray(population?.maskCells) ? population.maskCells.filter(c => c.geometry?.type === 'Polygon' && Number.isFinite(+c.density)) : [];
   const cityBoundaries = population?.cityBoundaries?.type === 'FeatureCollection' ? population.cityBoundaries : { type: 'FeatureCollection', features: [] };
@@ -33,7 +50,6 @@
   const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const format = n => new Intl.NumberFormat('en-GB').format(Math.round(n));
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
-  const colors = { bus: '#ef705e', tram: '#15b8c7', rail: '#5387ef', metro: '#8068e8' };
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
   const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
   let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0;
@@ -124,7 +140,6 @@
       return score < best.score ? { color: candidate, score } : best;
     }, { color: linePalette[0], score: Infinity }).color;
   }
-  function modeLabel(mode) { return ({ metro: 'Metro', tram: 'Tram', rail: 'Rail' })[mode] || String(mode || 'line'); }
   function nextDraftName(mode) {
     const prefix = ({ metro: 'M', tram: 'T', rail: 'R' })[mode] || 'L';
     const used = new Set(state.customRoutes.filter(r => r.mode === mode).map(r => r.name));
@@ -258,27 +273,7 @@
       if (map?.getLayer(id)) map.setLayoutProperty(id, 'visibility', state.populationVisible && (layer === 'shared' || state.activeLayer === layer) ? 'visible' : 'none');
     }
   }
-  function modal(html) {
-    if ($('modal').hidden) {
-      modalReturnFocus = document.activeElement;
-      modalInertState = [...document.body.children].filter(el => el !== $('modal')).map(el => [el, el.inert]);
-      modalInertState.forEach(([el]) => { el.inert = true; });
-    }
-    $('modal-content').innerHTML = html;
-    const heading = $('modal-content').querySelector('h2');
-    if (heading) heading.id = 'modal-title';
-    $('modal').hidden = false;
-    $('modal-close').focus();
-  }
-  function closeModal() {
-    if ($('modal').hidden) return;
-    $('modal').hidden = true;
-    modalInertState.forEach(([el, inert]) => { el.inert = inert; });
-    modalInertState = [];
-    const target = modalReturnFocus;
-    modalReturnFocus = null;
-    if (target?.isConnected && target.getClientRects().length) target.focus();
-  }
+  const { modal, closeModal, confirmDialog } = createModal($);
 
   const themeMedia = matchMedia('(prefers-color-scheme: dark)');
   const mapStyle = () => `https://tiles.openfreemap.org/styles/${themeMedia.matches ? 'dark' : 'liberty'}`;
@@ -857,102 +852,14 @@
     map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 13.5, duration: 650 });
     toast(`${modeLabel(mode)} concept loaded as an editable draft.`);
   }
-  function renderList() {
-    const routes = allRoutes();
-    $('line-total').textContent = `${routes.length} patterns`;
-    $('network-peek-total').textContent = routes.length;
-    const q = state.search.toLocaleLowerCase('pl');
-    const shown = routes.filter(r => (state.filter === 'all' || r.mode === state.filter) && (!q || `${r.name} ${r.longName}`.toLocaleLowerCase('pl').includes(q)));
-    $('visible-total').textContent = `${shown.length} shown`;
-    const list = state.showAll || q || state.filter !== 'all' ? shown : shown.slice(0, 80);
-    $('route-list').innerHTML = list.map(r => `<button class="route-card mode-${r.mode}${r.id === state.selected ? ' selected' : ''}" data-route="${escape(r.id)}" aria-pressed="${r.id === state.selected}" style="--route-color:${escape(routeColor(r))};width:100%;text-align:left;${r.active === false ? 'opacity:.48;' : ''}"><span class="route-info"><strong>${escape(r.name)} <span class="route-dir">${escape(r.ring ? '⟳' : r.source === 'player' ? '↔' : r.direction === '1' ? '↩' : '→')}</span></strong><small>${escape(r.longName || r.stopIds.length + ' stops')}</small></span><span class="route-type">${escape(r.mode)}</span></button>`).join('') || '<p class="empty-state">No lines match this filter.</p>';
-    $('more-routes').style.display = !state.showAll && !q && state.filter === 'all' && shown.length > 80 ? '' : 'none';
-    document.querySelectorAll('#mode-filters button').forEach(b => b.classList.toggle('active', b.dataset.mode === state.filter));
-    $('undo-button').disabled = !state.history.length;
-  }
+  const ctx = {};
+  function renderList() { renderRouteList(ctx); }
   function renderInspector() {
-    const el = $('inspector-content');
-    $('inspector-peek-label').textContent = state.selectedStop ? '◎' : state.selected ? routeById(state.selected)?.name?.slice(0, 3) || '↗' : state.tool === 'metro' ? '✎' : '＋';
-    $('inspector-peek-kind').textContent = state.selectedStop ? 'stop' : state.selected ? 'line' : state.tool === 'metro' ? 'draft' : 'line';
-    if (state.tool === 'metro') {
-      const mode = modeLabel(state.draftMode), template = state.draftTemplate;
-      const sourceNote = template ? `<div class="section"><p><b>${escape(template.status || 'Historical concept')}</b> · ${escape(template.confidence || 'Conceptual alignment')}</p><p>${escape(template.description || '')}</p><p><a href="${escape(safeUrl(template.sourceUrl || '#'))}" target="_blank" rel="noopener">${escape(template.sourceTitle || 'Open proposal source')} ↗</a></p><p class="fine-print">The proposal source does not give an engineered alignment. ${template.stationCoordinateSourceUrl ? `Map coordinates: <a href="${escape(safeUrl(template.stationCoordinateSourceUrl))}" target="_blank" rel="noopener">station data source ↗</a>.` : ''}</p></div>` : '';
-      const heading = template ? `Edit this ${mode.toLowerCase()} concept` : 'Draw your metro';
-      const intro = state.movingDraftIndex !== null ? `Click the new map position for ${state.draft[state.movingDraftIndex]?.name || 'this station'}. Press Escape to cancel.` : template ? 'This sourced idea is loaded as a draft. Add or remove stations to explore a variant.' : 'Tap the map to place stations. Click near an existing stop to snap to its location and enable a transfer.';
-      const routeNote = (template ? 'Draft segments are direct lines between the displayed stations. Proposed station sites marked schematic are map anchors, not surveyed locations.' : 'Metro tracks are drawn as direct segments. Tunnel engineering and construction cost are outside this sandbox.') + (state.draftRing ? ' The closing segment connects directly to the first station.' : '') + ' Right-click a station to move or remove it; middle-drag to reposition it directly.';
-      el.innerHTML = `<div class="section"><div class="section-title"><h2>${template ? 'PROPOSAL DRAFT' : 'NEW INFRASTRUCTURE'}</h2><span class="chip mode-${escape(state.draftMode)}">${escape(mode)}</span></div><h2 class="inspector-heading">${escape(heading)}</h2><p class="intro">${escape(intro)}</p><div class="form-stack"><label>Line name<input id="metro-name" maxlength="18" value="${escape(state.draftName)}"></label><div class="form-row"><label>Every · minutes<input id="metro-headway" type="number" min="3" max="60" value="${state.draftHeadway}"></label><label>Line color<input id="metro-color" type="color" value="${escape(state.draftColor)}"></label></div><button type="button" id="suggest-draft-color">Suggest color</button><label class="toggle-row"><input id="draft-ring" type="checkbox" ${state.draftRing ? 'checked' : ''}> Ring line · one continuous direction</label><small>Stops are served in drawn order, then the line returns to its first stop.</small></div></div>${sourceNote}<div class="section"><div class="section-title"><h3>Stations</h3><span class="value">${state.draft.length}</span></div><div class="stop-list">${state.draft.map((s, i) => `<div class="stop-row"><span class="stop-index">${i + 1}</span><span title="${escape(s.coordinateNote || '')}">${escape(s.name)}${s.schematic ? '<small class="source-note">Schematic location</small>' : ''}</span><button data-draft-remove="${i}" title="Remove station">×</button></div>`).join('') || '<p class="empty-state">Click on the map to begin.</p>'}</div><div class="toolbar" style="margin-top:14px"><button id="cancel-metro">Cancel</button><button id="finish-metro" class="primary" ${state.draft.length < (state.draftRing ? 3 : 2) ? 'disabled' : ''}>Open line</button></div></div><div class="section"><p class="fine-print">${escape(routeNote)}</p></div>`;
-      $('metro-name').oninput = e => state.draftName = e.target.value;
-      $('metro-headway').onchange = e => state.draftHeadway = Math.max(3, Math.min(60, Number(e.target.value) || 8));
-      $('metro-color').oninput = e => { state.draftColor = e.target.value; renderDraft(); };
-      $('suggest-draft-color').onclick = () => { state.draftColor = suggestLineColor(state.draft.map(s => s.pos)); $('metro-color').value = state.draftColor; renderDraft(); };
-      $('draft-ring').onchange = e => { state.draftRing = e.target.checked; renderInspector(); renderDraft(); };
-      el.querySelectorAll('[data-draft-remove]').forEach(button => {
-        const station = state.draft[Number(button.dataset.draftRemove)];
-        button.setAttribute('aria-label', `Remove ${station?.name || 'station'} from draft`);
-      });
-      $('finish-metro').onclick = createMetro;
-      $('cancel-metro').onclick = () => { state.tool = 'inspect'; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = null; state.draftMode = 'metro'; state.draftColor = colors.metro; map.getCanvas().style.cursor = ''; renderInspector(); renderDraft(); };
-      return;
-    }
-    if (state.selectedStop) {
-      const station = stop(state.selectedStop);
-      if (!station) { state.selectedStop = null; return renderInspector(); }
-      const areaIds = new Set([station.id]);
-      if (station.area) {
-        for (const candidate of network.stops.concat(state.customStops)) {
-          if (candidate.area === station.area) areaIds.add(candidate.id);
-        }
-      }
-      const services = allRoutes().filter(route => route.stopIds.some(id => areaIds.has(id))).map(route => {
-        const inboundStops = new Set();
-        route.stopIds.forEach((id, index) => {
-          if (!areaIds.has(id)) return;
-          const previous = route.stopIds[index - 1] || (route.ring ? route.stopIds.at(-1) : null);
-          const next = route.source === 'player' && !route.ring ? route.stopIds[index + 1] : null;
-          for (const neighbor of [previous, next]) if (neighbor) inboundStops.add(stop(neighbor)?.name || neighbor);
-          if (!previous && !next) inboundStops.add('Origin');
-        });
-        return { route, inbound: [...inboundStops].join(' / ') || 'Origin' };
-      }).sort((a, b) => Number(a.route.active === false) - Number(b.route.active === false) || a.route.mode.localeCompare(b.route.mode) || a.route.name.localeCompare(b.route.name, 'pl'));
-      el.innerHTML = `<div class="section"><div class="section-title"><h2>STOP INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close stop inspector">×</button></div><h2 class="inspector-heading">${escape(station.name)}</h2><p class="intro">${escape(station.city || 'Transit stop')} · ${services.length} ${services.length === 1 ? 'pattern' : 'patterns'} using this ${areaIds.size > 1 ? 'interchange' : 'stop'}</p><p class="fine-print">Intervals are scenario estimates per pattern and direction, not a live arrival board. Several patterns may share a line name.</p></div><div class="section"><div class="section-title"><h3>Service at this stop</h3><span class="value">${services.length}</span></div><div class="stop-service-list">${services.map(({ route, inbound }) => `<button type="button" class="stop-service mode-${escape(route.mode)}" data-inspect-route="${escape(route.id)}"><span class="stop-service-main"><b>${escape(route.name)} ${route.ring ? '⟳' : route.source === 'player' ? '↔' : route.direction === '1' ? '↩' : '→'}</b><small>${escape(route.mode)} · from ${escape(inbound)}</small></span><span class="stop-service-interval">${route.active === false || !sim.resolveService(route, state.daypart).runs ? 'Off' : `Every ${escape(sim.resolveService(route, state.daypart).headway)} min`}</span></button>`).join('') || '<p class="empty-state">No lines currently use this stop.</p>'}</div></div>`;
-      return;
-    }
-    const r = routeById(state.selected);
-    if (!r) {
-      el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2></div><div class="inspector-hero"><span class="hero-mark">↗</span><h2>Make the network yours.</h2><p>Select any route on the map or in the list to adjust service. Or draw a metro line through the real city.</p><button class="primary" id="hero-metro">+ Draw metro line</button></div></div><div class="section"><div class="section-title"><h3>Source snapshot</h3></div><p class="source-note">${network.sources.map(item => `${escape(item.name)}: ${escape(item.date || '')}`).join('<br>')}<br>OpenStreetMap basemap</p><button id="inspector-data">View data and method ↗</button></div>`;
-      $('hero-metro').onclick = enterMetroTool; $('inspector-data').onclick = openData;
-      return;
-    }
-    const templateNote = r.templateId ? `<p class="model-notice"><b>${escape(r.templateStatus || 'Based on a historical proposal')}</b> · ${escape(r.templateConfidence || 'Conceptual alignment')}<br>${escape(r.templateDescription || 'This line began from a sourced regional concept.')}${r.templateSourceUrl ? `<br><a href="${escape(safeUrl(r.templateSourceUrl))}" target="_blank" rel="noopener">${escape(r.templateSourceTitle || 'Read proposal source')} ↗</a>` : ''}<br>Stations tagged schematic are approximate map anchors; line segments are direct and do not represent an engineered alignment.</p>` : '';
-    const periodService = sim.resolveService(r, state.daypart);
-    const intervalHelp = r.ring ? 'Continuous one direction service, returning from the last stop to the first.' : r.source === 'player' ? 'Service runs in both directions; return trips and cost are modeled. The interval stays the same in every period.' : !periodService.runs ? 'This pattern has no trips in the selected period.' : 'Interval for the selected period. Changing it replaces the interval in every period.';
-    el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close line inspector">×</button><span class="chip mode-${escape(r.mode)}">${escape(modeLabel(r.mode))}</span></div><div class="inspector-line-title"><span class="line-badge" style="background:${escape(routeColor(r))}">${escape(r.name)}</span><div><h2>${escape(r.longName || r.name)}</h2><small>${r.source === 'player' ? `Your ${escape(modeLabel(r.mode).toLowerCase())} line` : region.feedLabels?.[r.source] || r.source} · ${r.stopIds.length} stops</small></div></div>${templateNote}${r.source === 'pkm' ? `<p class="model-notice">Main timetable sequence; branches are simplified.${r.unmappedStops?.length ? ` ${r.unmappedStops.length} stops without published map coordinates are omitted: ${escape([...new Set(r.unmappedStops)].join(', '))}.` : ''}</p>` : ''}${r.edited ? '<p class="model-notice">Stop edits use direct geometry between stops; street or track alignment is not recalculated.</p>' : ''}<div class="form-stack"><label>Service interval · minutes<input id="route-headway" type="number" min="3" max="120" value="${escape(periodService.headway)}"><small>${escape(intervalHelp)}</small></label>${r.source === 'player' ? `<label class="toggle-row"><input id="route-ring" type="checkbox" ${r.ring ? 'checked' : ''} ${r.stopIds.length < 3 ? 'disabled' : ''}> Ring line · one continuous direction</label>` : ''}<label class="toggle-row"><input id="route-active" type="checkbox" ${r.active === false ? '' : 'checked'}> Line in service</label></div><div class="toolbar"><button id="add-stop-button">+ Add existing stop</button>${r.ring ? '<button id="reverse-ring-button" type="button">Reverse ring direction</button>' : ''}${r.source === 'player' ? `<button id="delete-route-button" class="danger">Delete ${escape(modeLabel(r.mode).toLowerCase())} line</button>` : '<button id="revert-route-button">Revert line</button>'}</div></div><div class="section"><div class="section-title"><h3>Stop sequence</h3><span class="value">${r.stopIds.length}</span></div><div class="stop-list">${r.stopIds.map((id, i) => { const s = stop(id); return `<div class="stop-row"><span class="stop-index">${i + 1}</span><button class="stop-name-button" type="button" data-inspect-stop="${escape(id)}" title="Inspect all service at this stop">${escape(s?.name || id)}${s?.schematic ? '<small class="source-note">Schematic location</small>' : ''}</button><div class="stop-actions"><button data-stop-up="${i}" ${i === 0 ? 'disabled' : ''} title="Move earlier">↑</button><button data-stop-down="${i}" ${i === r.stopIds.length - 1 ? 'disabled' : ''} title="Move later">↓</button><button data-stop-remove="${i}" ${r.stopIds.length <= 2 ? 'disabled' : ''} title="Remove stop">×</button></div></div>`; }).join('')}</div></div>`;
-    const sourceLabel = el.querySelector('.inspector-line-title small');
-    if (r.source === 'pkm') sourceLabel.textContent = `PKM Jaworzno timetable · ${r.stopIds.length} stops`;
-    $('route-headway').parentElement.insertAdjacentHTML('afterend', `<div class="form-row"><label>Line color<input id="route-color" type="color" value="${escape(routeColor(r))}"></label><button type="button" id="suggest-route-color">Suggest color</button></div>`);
-    $('route-color').onchange = e => setRouteField(r, 'color', e.target.value);
-    $('suggest-route-color').onclick = () => setRouteField(r, 'color', suggestLineColor(r.stopIds.map(stop).filter(Boolean).map(s => s.pos)));
-    $('route-headway').onchange = e => setRouteField(r, 'headway', Math.max(3, Math.min(120, Number(e.target.value) || r.headway)));
-    el.querySelectorAll('[data-stop-up], [data-stop-down], [data-stop-remove]').forEach(button => {
-      const index = Number(button.dataset.stopUp ?? button.dataset.stopDown ?? button.dataset.stopRemove);
-      const stopName = stop(r.stopIds[index])?.name || 'stop';
-      const label = button.hasAttribute('data-stop-up') ? `Move ${stopName} earlier` : button.hasAttribute('data-stop-down') ? `Move ${stopName} later` : `Remove ${stopName}`;
-      button.setAttribute('aria-label', label);
-    });
-    const ringToggle = $('route-ring');
-    if (ringToggle) ringToggle.onchange = e => {
-      remember();
-      const index = state.customRoutes.findIndex(item => item.id === r.id);
-      state.customRoutes[index] = { ...state.customRoutes[index], ring: e.target.checked, geometry: routeGeometry(r.stopIds, e.target.checked), edited: true };
-      changed();
-    };
-    $('route-active').onchange = e => setRouteField(r, 'active', e.target.checked);
-    const reverseRing = $('reverse-ring-button');
-    if (reverseRing) reverseRing.onclick = () => setRouteStops(r, [r.stopIds[0], ...r.stopIds.slice(1).reverse()]);
-    $('add-stop-button').onclick = () => { state.tool = 'add-stop'; setMobileView('map'); map.getCanvas().style.cursor = 'crosshair'; toast('Click an existing stop on the map to insert it into this line.'); };
-    const revert = $('revert-route-button'); if (revert) revert.onclick = () => { remember(); delete state.overrides[r.id]; changed(); toast('Line restored from source snapshot.'); };
-    const del = $('delete-route-button'); if (del) del.onclick = () => { remember(); state.customRoutes = state.customRoutes.filter(x => x.id !== r.id); state.customStops = state.customStops.filter(s => !s.id.startsWith(r.id + ':')); state.selected = null; changed(); toast(`${modeLabel(r.mode)} line deleted.`); };
+    if (renderDraftInspector(ctx)) return;
+    if (renderStopInspector(ctx)) return;
+    renderLineInspector(ctx);
   }
+  function renderStats() { renderResults(ctx); }
   function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderSelection(); renderDraft(); toast('Click the map to place metro stations.'); }
 
   let statsWorker = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
@@ -968,7 +875,7 @@
     if (!workerUnavailable) {
       try {
         if (!statsWorker) {
-          statsWorker = new Worker('./sim-worker.js?v=2026-09-28-dayparts');
+          statsWorker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}`, import.meta.url), { type: 'module' });
           statsWorker.onmessage = ({ data }) => {
             statsBusy = false;
             if (data.revision === statsRevision) {
@@ -995,31 +902,6 @@
       state.stats = sim.calculate(network, scenario.customRoutes, scenario.customStops, scenario.overrides, state.daypart);
       renderStats();
     }, 15);
-  }
-  function renderStats() {
-    const s = state.stats, b = state.baseline; if (!s) return;
-    const served = s.passengers > 0;
-    $('pulse-passengers').textContent = compactMillions(s.passengers);
-    $('pulse-satisfaction').textContent = served ? s.satisfaction.toFixed(2) : '—';
-    $('stat-passengers').textContent = format(s.passengers);
-    $('stat-satisfaction').textContent = served ? `${s.satisfaction.toFixed(2)}/100` : 'No trips';
-    $('stat-satisfaction').closest('.stat-card').classList.toggle('unavailable', !served);
-    $('stat-satisfaction').title = served ? 'Modeled satisfaction index, not observed survey data.' : 'No modeled transit trips were served; satisfaction cannot be estimated.';
-    $('stat-wait').textContent = served ? `${s.wait.toFixed(2)} min` : '—';
-    $('stat-wait').title = served ? 'Average modeled waiting time across all boardings.' : 'No modeled transit trips were served; waiting time cannot be estimated.';
-    $('stat-cost').textContent = compactMillions(s.cost);
-    $('stat-cost').title = `zł ${format(s.cost)} per simulated day`;
-    $('stat-cost').setAttribute('aria-label', `Operating cost: ${format(s.cost)} Polish złoty per simulated day`);
-    const delta = (a, baseline, suffix = '', digits = 0) => { const d = a - baseline; return `${d > 0 ? '+' : ''}${digits ? d.toFixed(digits) : format(d)}${suffix} vs baseline`; };
-    $('delta-passengers').textContent = b ? delta(s.passengers, b.passengers) : 'Model estimate';
-    $('delta-satisfaction').textContent = served ? (b ? delta(s.satisfaction, b.satisfaction, ' pts', 2) : 'Model index') : 'Unavailable';
-    $('secondary-stats').innerHTML = `<span><b>${served ? `${s.travel.toFixed(2)} min` : '—'}</b> journey</span><span><b>${served ? s.transfers : '—'}</b> transfers</span><span><b>${s.coverage}%</b> demand served</span>`;
-    const cities = Object.keys(s.cityStats || {}).sort((a, b) => a.localeCompare(b, 'pl'));
-    state.resultCity = cities.includes(state.resultCity) ? state.resultCity : (cities.includes(region.defaultResultArea) ? region.defaultResultArea : cities[0]);
-    const local = s.cityStats?.[state.resultCity], original = b?.cityStats?.[state.resultCity];
-    $('local-results').innerHTML = `<label>Local impact<select id="result-city">${cities.map(city => `<option value="${escape(city)}" ${city === state.resultCity ? 'selected' : ''}>${escape(city)}</option>`).join('')}</select></label><div class="local-results-grid"><span><b>${format(local?.passengers || 0)}</b> trips <small>${original ? delta(local.passengers, original.passengers) : ''}</small></span><span><b>${local?.passengers ? local.satisfaction.toFixed(2) : '—'}</b> satisfaction <small>${original && local?.passengers ? delta(local.satisfaction, original.satisfaction, ' pts', 2) : ''}</small></span><span><b>${local?.coverage.toFixed(2) || '0.00'}%</b> demand served <small>${original ? delta(local.coverage, original.coverage, ' pts', 2) : ''}</small></span></div>`;
-    $('result-city').onchange = e => { state.resultCity = e.target.value; renderStats(); };
-    maybeStartIntro();
   }
 
   function openData() {
@@ -1134,8 +1016,8 @@
     } catch (err) { toast(err.message || 'Could not read this scenario.'); }
     e.target.value = '';
   };
-  $('reset-button').onclick = () => {
-    if (!confirm('Restore the published network snapshot and remove your local edits? You can undo immediately afterward.')) return;
+  $('reset-button').onclick = async () => {
+    if (!await confirmDialog('Restore the published network snapshot and remove your local edits? You can undo immediately afterward.')) return;
     remember(); Object.assign(state, empty()); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; state.draft = []; state.draftRing = false; changed(); toast('Source snapshot restored.');
   };
   $('guide-button').onclick = openGuide; $('about-button').onclick = openData; $('model-link').onclick = openData;
@@ -1144,7 +1026,7 @@
   };
   $('modal-content').onclick = e => { const button = e.target.closest('[data-mobile-action]'); if (button) { const id = button.dataset.mobileAction; closeModal(); if (id === 'settings-button') openSettings(); else if (id === 'fullscreen-button') toggleFullscreen(); else $(id).click(); } };
   $('modal-close').onclick = closeModal; $('modal').onclick = e => { if (e.target === $('modal')) closeModal(); };
-  document.onkeydown = e => {
+  document.onkeydown = async e => {
     if (e.key === 'Escape') {
       if ($('layers-menu').open) { $('layers-menu').open = false; $('layers-menu').querySelector('summary').focus(); return; }
       if (!$('map-context-menu').hidden) { closeContextMenu(); map.getCanvas().focus(); return; }
@@ -1153,7 +1035,7 @@
       if (state.movingDraftIndex !== null) { state.movingDraftIndex = null; renderInspector(); toast('Station move cancelled.'); return; }
       if (state.selected || state.selectedStop) { clearSelection(); return; }
       if (state.tool !== 'inspect') {
-        if (state.draft.length && !confirm('Discard this in-progress line?')) return;
+        if (state.draft.length && !await confirmDialog('Discard this in-progress line?')) return;
         state.tool = 'inspect'; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = null; state.draftMode = 'metro'; state.draftColor = colors.metro;
         map.getCanvas().style.cursor = '';
         renderInspector(); renderDraft();
@@ -1319,7 +1201,6 @@
     animationFrame = requestAnimationFrame(frame);
   }
 
-  const modeSpeed = { bus: 22, tram: 25, rail: 48, metro: 42 };
   const modePriority = { metro: 0, rail: 1, tram: 2, bus: 3 };
 
   function renderVehicles() {
@@ -1366,7 +1247,7 @@
       const service = sim.resolveService(r, state.daypart);
       if (!service.runs) continue;
       const length = geom.length;
-      const tripMinutes = Math.max(4, length / (modeSpeed[r.mode] || 22) * 60);
+      const tripMinutes = Math.max(4, length / (cruiseSpeed[r.mode] || 22) * 60);
       const headway = service.headway;
       const bothWays = r.source === 'player' && !r.ring;
       const targetCount = Math.min(4, Math.max(bothWays ? 2 : 1, Math.ceil(tripMinutes / headway) * (bothWays ? 2 : 1)));
@@ -1398,6 +1279,7 @@
     if (isDebug) window.__DEBUG__.lastVehicleCount = lastVehicleCount;
     setSourceData('vehicles', featureCollection(features));
   }
+  Object.assign(ctx, { $, state, allRoutes, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, remember, changed, toast, map, enterMetroTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry });
   renderTemplates(); renderList(); renderInspector();
   document.addEventListener('pointerdown', e => {
     if (intro.active && intro.index === 0) return;
@@ -1522,4 +1404,6 @@
   }
   window.addEventListener('resize', () => { if (intro.active) placeIntro(introTarget()); });
   scheduleStats();
-})();
+}
+
+startApp();

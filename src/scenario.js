@@ -1,7 +1,7 @@
-(() => {
-  'use strict';
-  const colors = { bus: '#ef705e', tram: '#15b8c7', rail: '#5387ef', metro: '#8068e8' };
-  const modes = new Set(Object.keys(colors));
+import { colors } from './modes.js';
+
+const host = () => globalThis.window || globalThis;
+const modeIds = new Set(Object.keys(colors));
   const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   const text = (value, limit) => typeof value === 'string' ? value.slice(0, limit) : '';
   const routeId = id => typeof id === 'string' && id.length <= 64 && /^[a-z]+:[a-z0-9]+(:[0-9]+)?$/.test(id);
@@ -13,12 +13,12 @@
       return url.protocol === 'http:' || url.protocol === 'https:' ? value : '#';
     } catch (_) { return '#'; }
   };
-  const safeColor = (value, mode = 'metro') => typeof value === 'string' && /^#[0-9a-f]{6}$/.test(value) ? value : modes.has(mode) ? colors[mode] : colors.metro;
+  const safeColor = (value, mode = 'metro') => typeof value === 'string' && /^#[0-9a-f]{6}$/.test(value) ? value : modeIds.has(mode) ? colors[mode] : colors.metro;
 
   function normalize(data, onWarning = () => {}) {
     if (!record(data) || !record(data.overrides) || !Array.isArray(data.customRoutes) || !Array.isArray(data.customStops)) throw new Error('This file is not a valid network scenario.');
-    const network = window.TRANSIT_NETWORK;
-    const templates = new Map((window.TRANSIT_TEMPLATES?.templates || []).map(template => [template.id, template]));
+    const network = host().TRANSIT_NETWORK;
+    const templates = new Map((host().TRANSIT_TEMPLATES?.templates || []).map(template => [template.id, template]));
     const published = new Map(network.routes.map(route => [route.id, route]));
     const entries = Object.entries(data.overrides);
     const limit = (length, max, name) => {
@@ -37,7 +37,7 @@
     const ids = new Set(published.keys());
     const candidates = [];
     for (const raw of data.customRoutes) {
-      if (!record(raw) || !routeId(raw.id) || ids.has(raw.id) || raw.source !== 'player' || !modes.has(raw.mode) || !Array.isArray(raw.stopIds)) continue;
+      if (!record(raw) || !routeId(raw.id) || ids.has(raw.id) || raw.source !== 'player' || !modeIds.has(raw.mode) || !Array.isArray(raw.stopIds)) continue;
       if (!withinStopLimit(raw.stopIds)) continue;
       ids.add(raw.id);
       candidates.push(raw);
@@ -116,5 +116,5 @@
     const daypart = data.daypart === 'midday' || data.daypart === 'saturday' ? data.daypart : 'peak';
     return { overrides, customRoutes, customStops, daypart };
   }
-  window.TransitScenario = { normalize, safeUrl, safeColor };
-})();
+
+export { normalize, safeUrl, safeColor };
