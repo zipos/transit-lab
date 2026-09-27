@@ -16,7 +16,7 @@
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
   const colors = { bus: '#ef705e', tram: '#15b8c7', rail: '#5387ef', metro: '#8068e8' };
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
-  const state = { ...empty(), selected: null, selectedStop: null, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
+  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
   let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0;
   let vehiclesActive = false, lastVehicleCount = 0;
 
@@ -121,7 +121,7 @@
   }
   function snapshot() { return JSON.stringify({ overrides: state.overrides, customRoutes: state.customRoutes, customStops: state.customStops }); }
   function remember() { state.history.push(snapshot()); if (state.history.length > 30) state.history.shift(); }
-  function persist() { try { localStorage.setItem(STORAGE, snapshot()); } catch (_) { toast('Local storage unavailable. Export your network to keep it.'); } }
+  function persist() { try { localStorage.setItem(STORAGE, JSON.stringify({ ...JSON.parse(snapshot()), daypart: state.daypart })); } catch (_) { toast('Local storage unavailable. Export your network to keep it.'); } }
   const { safeUrl } = window.TransitScenario;
   const MAX_SCENARIO_BYTES = 5 * 1024 * 1024;
   const normalizeScenario = (data, onWarning = toast) => window.TransitScenario.normalize(data, onWarning);
@@ -892,7 +892,7 @@
         });
         return { route, inbound: [...inboundStops].join(' / ') || 'Origin' };
       }).sort((a, b) => Number(a.route.active === false) - Number(b.route.active === false) || a.route.mode.localeCompare(b.route.mode) || a.route.name.localeCompare(b.route.name, 'pl'));
-      el.innerHTML = `<div class="section"><div class="section-title"><h2>STOP INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close stop inspector">×</button></div><h2 class="inspector-heading">${escape(station.name)}</h2><p class="intro">${escape(station.city || 'Transit stop')} · ${services.length} ${services.length === 1 ? 'pattern' : 'patterns'} using this ${areaIds.size > 1 ? 'interchange' : 'stop'}</p><p class="fine-print">Intervals are scenario estimates per pattern and direction, not a live arrival board. Several patterns may share a line name.</p></div><div class="section"><div class="section-title"><h3>Service at this stop</h3><span class="value">${services.length}</span></div><div class="stop-service-list">${services.map(({ route, inbound }) => `<button type="button" class="stop-service mode-${escape(route.mode)}" data-inspect-route="${escape(route.id)}"><span class="stop-service-main"><b>${escape(route.name)} ${route.ring ? '⟳' : route.source === 'player' ? '↔' : route.direction === '1' ? '↩' : '→'}</b><small>${escape(route.mode)} · from ${escape(inbound)}</small></span><span class="stop-service-interval">${route.active === false ? 'Off' : `Every ${escape(route.headway)} min`}</span></button>`).join('') || '<p class="empty-state">No lines currently use this stop.</p>'}</div></div>`;
+      el.innerHTML = `<div class="section"><div class="section-title"><h2>STOP INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close stop inspector">×</button></div><h2 class="inspector-heading">${escape(station.name)}</h2><p class="intro">${escape(station.city || 'Transit stop')} · ${services.length} ${services.length === 1 ? 'pattern' : 'patterns'} using this ${areaIds.size > 1 ? 'interchange' : 'stop'}</p><p class="fine-print">Intervals are scenario estimates per pattern and direction, not a live arrival board. Several patterns may share a line name.</p></div><div class="section"><div class="section-title"><h3>Service at this stop</h3><span class="value">${services.length}</span></div><div class="stop-service-list">${services.map(({ route, inbound }) => `<button type="button" class="stop-service mode-${escape(route.mode)}" data-inspect-route="${escape(route.id)}"><span class="stop-service-main"><b>${escape(route.name)} ${route.ring ? '⟳' : route.source === 'player' ? '↔' : route.direction === '1' ? '↩' : '→'}</b><small>${escape(route.mode)} · from ${escape(inbound)}</small></span><span class="stop-service-interval">${route.active === false || !sim.resolveService(route, state.daypart).runs ? 'Off' : `Every ${escape(sim.resolveService(route, state.daypart).headway)} min`}</span></button>`).join('') || '<p class="empty-state">No lines currently use this stop.</p>'}</div></div>`;
       return;
     }
     const r = routeById(state.selected);
@@ -902,8 +902,9 @@
       return;
     }
     const templateNote = r.templateId ? `<p class="model-notice"><b>${escape(r.templateStatus || 'Based on a historical proposal')}</b> · ${escape(r.templateConfidence || 'Conceptual alignment')}<br>${escape(r.templateDescription || 'This line began from a sourced regional concept.')}${r.templateSourceUrl ? `<br><a href="${escape(safeUrl(r.templateSourceUrl))}" target="_blank" rel="noopener">${escape(r.templateSourceTitle || 'Read proposal source')} ↗</a>` : ''}<br>Stations tagged schematic are approximate map anchors; line segments are direct and do not represent an engineered alignment.</p>` : '';
-    const intervalHelp = r.ring ? 'Continuous one direction service, returning from the last stop to the first.' : r.source === 'player' ? 'Service runs in both directions; return trips and cost are modeled.' : r.source === 'pkm' ? 'Weekday departure-count estimate over 14 hours. Map segments run directly between published stops.' : 'Estimated from scheduled daily service in the baseline.';
-    el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close line inspector">×</button><span class="chip mode-${escape(r.mode)}">${escape(modeLabel(r.mode))}</span></div><div class="inspector-line-title"><span class="line-badge" style="background:${escape(routeColor(r))}">${escape(r.name)}</span><div><h2>${escape(r.longName || r.name)}</h2><small>${r.source === 'player' ? `Your ${escape(modeLabel(r.mode).toLowerCase())} line` : r.source === 'ks' ? 'Koleje Śląskie GTFS' : 'GZM ZTM GTFS'} · ${r.stopIds.length} stops</small></div></div>${templateNote}${r.source === 'pkm' ? `<p class="model-notice">Main timetable sequence; branches are simplified.${r.unmappedStops?.length ? ` ${r.unmappedStops.length} stops without published map coordinates are omitted: ${escape([...new Set(r.unmappedStops)].join(', '))}.` : ''}</p>` : ''}${r.edited ? '<p class="model-notice">Stop edits use direct geometry between stops; street or track alignment is not recalculated.</p>' : ''}<div class="form-stack"><label>Service interval · minutes<input id="route-headway" type="number" min="3" max="120" value="${escape(r.headway)}"><small>${escape(intervalHelp)}</small></label>${r.source === 'player' ? `<label class="toggle-row"><input id="route-ring" type="checkbox" ${r.ring ? 'checked' : ''} ${r.stopIds.length < 3 ? 'disabled' : ''}> Ring line · one continuous direction</label>` : ''}<label class="toggle-row"><input id="route-active" type="checkbox" ${r.active === false ? '' : 'checked'}> Line in service</label></div><div class="toolbar"><button id="add-stop-button">+ Add existing stop</button>${r.ring ? '<button id="reverse-ring-button" type="button">Reverse ring direction</button>' : ''}${r.source === 'player' ? `<button id="delete-route-button" class="danger">Delete ${escape(modeLabel(r.mode).toLowerCase())} line</button>` : '<button id="revert-route-button">Revert line</button>'}</div></div><div class="section"><div class="section-title"><h3>Stop sequence</h3><span class="value">${r.stopIds.length}</span></div><div class="stop-list">${r.stopIds.map((id, i) => { const s = stop(id); return `<div class="stop-row"><span class="stop-index">${i + 1}</span><button class="stop-name-button" type="button" data-inspect-stop="${escape(id)}" title="Inspect all service at this stop">${escape(s?.name || id)}${s?.schematic ? '<small class="source-note">Schematic location</small>' : ''}</button><div class="stop-actions"><button data-stop-up="${i}" ${i === 0 ? 'disabled' : ''} title="Move earlier">↑</button><button data-stop-down="${i}" ${i === r.stopIds.length - 1 ? 'disabled' : ''} title="Move later">↓</button><button data-stop-remove="${i}" ${r.stopIds.length <= 2 ? 'disabled' : ''} title="Remove stop">×</button></div></div>`; }).join('')}</div></div>`;
+    const periodService = sim.resolveService(r, state.daypart);
+    const intervalHelp = r.ring ? 'Continuous one direction service, returning from the last stop to the first.' : r.source === 'player' ? 'Service runs in both directions; return trips and cost are modeled. The interval stays the same in every period.' : !periodService.runs ? 'This pattern has no trips in the selected period.' : 'Interval for the selected period. Changing it replaces the interval in every period.';
+    el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close line inspector">×</button><span class="chip mode-${escape(r.mode)}">${escape(modeLabel(r.mode))}</span></div><div class="inspector-line-title"><span class="line-badge" style="background:${escape(routeColor(r))}">${escape(r.name)}</span><div><h2>${escape(r.longName || r.name)}</h2><small>${r.source === 'player' ? `Your ${escape(modeLabel(r.mode).toLowerCase())} line` : r.source === 'ks' ? 'Koleje Śląskie GTFS' : 'GZM ZTM GTFS'} · ${r.stopIds.length} stops</small></div></div>${templateNote}${r.source === 'pkm' ? `<p class="model-notice">Main timetable sequence; branches are simplified.${r.unmappedStops?.length ? ` ${r.unmappedStops.length} stops without published map coordinates are omitted: ${escape([...new Set(r.unmappedStops)].join(', '))}.` : ''}</p>` : ''}${r.edited ? '<p class="model-notice">Stop edits use direct geometry between stops; street or track alignment is not recalculated.</p>' : ''}<div class="form-stack"><label>Service interval · minutes<input id="route-headway" type="number" min="3" max="120" value="${escape(periodService.headway)}"><small>${escape(intervalHelp)}</small></label>${r.source === 'player' ? `<label class="toggle-row"><input id="route-ring" type="checkbox" ${r.ring ? 'checked' : ''} ${r.stopIds.length < 3 ? 'disabled' : ''}> Ring line · one continuous direction</label>` : ''}<label class="toggle-row"><input id="route-active" type="checkbox" ${r.active === false ? '' : 'checked'}> Line in service</label></div><div class="toolbar"><button id="add-stop-button">+ Add existing stop</button>${r.ring ? '<button id="reverse-ring-button" type="button">Reverse ring direction</button>' : ''}${r.source === 'player' ? `<button id="delete-route-button" class="danger">Delete ${escape(modeLabel(r.mode).toLowerCase())} line</button>` : '<button id="revert-route-button">Revert line</button>'}</div></div><div class="section"><div class="section-title"><h3>Stop sequence</h3><span class="value">${r.stopIds.length}</span></div><div class="stop-list">${r.stopIds.map((id, i) => { const s = stop(id); return `<div class="stop-row"><span class="stop-index">${i + 1}</span><button class="stop-name-button" type="button" data-inspect-stop="${escape(id)}" title="Inspect all service at this stop">${escape(s?.name || id)}${s?.schematic ? '<small class="source-note">Schematic location</small>' : ''}</button><div class="stop-actions"><button data-stop-up="${i}" ${i === 0 ? 'disabled' : ''} title="Move earlier">↑</button><button data-stop-down="${i}" ${i === r.stopIds.length - 1 ? 'disabled' : ''} title="Move later">↓</button><button data-stop-remove="${i}" ${r.stopIds.length <= 2 ? 'disabled' : ''} title="Remove stop">×</button></div></div>`; }).join('')}</div></div>`;
     const sourceLabel = el.querySelector('.inspector-line-title small');
     if (r.source === 'pkm') sourceLabel.textContent = `PKM Jaworzno timetable · ${r.stopIds.length} stops`;
     $('route-headway').parentElement.insertAdjacentHTML('afterend', `<div class="form-row"><label>Line color<input id="route-color" type="color" value="${escape(routeColor(r))}"></label><button type="button" id="suggest-route-color">Suggest color</button></div>`);
@@ -941,11 +942,11 @@
   function recomputeStats() {
     $('stat-passengers').textContent = '…'; $('stat-satisfaction').textContent = '…';
     const revision = ++statsRevision;
-    const scenario = { revision, customRoutes: state.customRoutes, customStops: state.customStops, overrides: state.overrides };
+    const scenario = { revision, customRoutes: state.customRoutes, customStops: state.customStops, overrides: state.overrides, daypart: state.daypart };
     if (!workerUnavailable) {
       try {
         if (!statsWorker) {
-          statsWorker = new Worker('./sim-worker.js?v=2026-09-26-region-2');
+          statsWorker = new Worker('./sim-worker.js?v=2026-09-28-dayparts');
           statsWorker.onmessage = ({ data }) => {
             statsBusy = false;
             if (data.revision === statsRevision) {
@@ -968,8 +969,8 @@
     // Local-file previews and browsers without workers retain the same model.
     setTimeout(() => {
       if (revision !== statsRevision) return;
-      state.baseline ||= sim.calculate(network, [], [], {});
-      state.stats = sim.calculate(network, scenario.customRoutes, scenario.customStops, scenario.overrides);
+      state.baseline = sim.calculate(network, [], [], {}, state.daypart);
+      state.stats = sim.calculate(network, scenario.customRoutes, scenario.customStops, scenario.overrides, state.daypart);
       renderStats();
     }, 15);
   }
@@ -1004,13 +1005,13 @@
     const demandExplanation = state.stats?.demandPopulation ? `The selected 2021 grid contains ${format(state.stats.demandPopulation)} residents. We group them into ${sim.zones.length} municipality-based anchors. Origins use residential population; destinations use a separate estimate based on local density and proximity to the municipal population center. This is not an observed work, school or retail zoning dataset. At 0.6 assumed cross-zone trip opportunities per resident per day, this produces ${format(state.stats.demandTrips)} modeled opportunities.` : 'Population data is unavailable.';
     modal(`<span class="chip">DATA & MODEL</span><h2>Real network. Estimated outcomes.</h2><p>The playable area covers all 41 GZM member municipalities, Jaworzno and Orzesze. Outlying endpoints provide transit context.</p>
       <div class="modal-sources"><p><b>GZM ZTM</b> — <a href="https://otwartedane.metropoliagzm.pl/dataset/rozklady-jazdy-i-lokalizacja-przystankow-gtfs-wersja-rozszerzona" target="_blank" rel="noopener">GTFS dataset</a>, snapshot for 23 September 2026, CC BY.</p><p><b>Koleje Śląskie</b> — <a href="https://koleje-ks.pl/gtfs/2025-2026.zip" target="_blank" rel="noopener">2025–2026 GTFS feed</a>.</p><p><b>PKM Jaworzno</b> — <a href="https://www.pkm.jaworzno.pl/rozklady/start.php" target="_blank" rel="noopener">official timetable and route map</a>, retrieved 26 September 2026. Main timetable sequences omit indented branches and stops without published map coordinates. Pattern shapes use straight segments between stops; intervals are estimated from weekday departures. Source terms do not state a reusable feed license.</p>${populationCredit}<p><b>Rapid transit access</b> — straight-line distance from each cell center to the nearest active tram, rail or player metro stop.</p><p><b>Past concepts</b> — three schematic line drafts from a <a href="https://bip.metropoliagzm.pl/attachments/download/189291" target="_blank" rel="noopener">2018 GZM transport concept</a>.</p><p><b>Basemap</b> — <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, delivered by <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p></div>
-      <h3>How the figures work</h3><p>${demandExplanation} Paths use stop sequences, walking transfers, interval estimates and mode speeds. A route's average initial wait is half its interval. Passenger count is a simulated transit share, never an observed count.</p><p>Satisfaction is an index based on modeled journey time, which already includes waiting and transfer penalties. The local results are grouped by trip origin. Cost is route-kilometers × departures × assumed cost per kilometer (bus zł12, tram zł20, rail zł38, metro zł55). These values support relative experiments, not official forecasts.</p><p>Each GTFS route uses one representative shape per direction; branches and short turns are simplified. Ordinary player lines run both ways; rings run in the drawn order and include their closing segment. New lines, PKM patterns and edited stops use direct segments. Play moves illustrative vehicles, not real-time positions.</p><p><a href="./data/network.json" target="_blank">Open network</a> · <a href="./data/population-density.json" target="_blank">Open population grid</a></p>`);
+      <h3>How the figures work</h3><p>${demandExplanation} Paths use stop sequences, walking transfers, the selected period's interval and scheduled run times. A route's average initial wait is half its interval. The Peak, Midday and Saturday control describes that period; the clock minute does not change the model. Passenger count is a simulated transit share, never an observed count.</p><p>Satisfaction is an index based on modeled journey time, which already includes waiting and transfer penalties. The local results are grouped by trip origin. Cost is route-kilometers × departures × assumed cost per kilometer (bus zł12, tram zł20, rail zł38, metro zł55). Peak uses Wednesday trip counts. Another period uses that period's stored trip count, or Wednesday trips scaled by the peak interval divided by the period interval when no count was stored. These values support relative experiments, not official forecasts.</p><p>Each GTFS route uses one representative shape per direction; branches and short turns are simplified. Ordinary player lines run both ways; rings run in the drawn order and include their closing segment. New lines, PKM patterns and edited stops use direct segments. Play moves illustrative vehicles, not real-time positions.</p><p><a href="./data/network.json" target="_blank">Open network</a> · <a href="./data/population-density.json" target="_blank">Open population grid</a></p>`);
   }
   function openGuide() {
     modal(`<span class="chip">QUICK GUIDE</span><h2>Test an idea for GZM.</h2><ol><li><b>Explore</b> the real bus, tram and rail patterns. Click a line in the list or on the map.</li><li><b>Reduce map clutter</b> with the mode buttons in the bottom-bar Layers menu. They hide routes, stops and vehicles without changing the network.</li><li><b>Tinker</b> with its service interval, active state and stops. The stats compare your scenario with the baseline.</li><li><b>Build</b> a metro from map clicks, optionally close it into a one-direction ring, or load a documented past concept as an editable draft.</li><li><b>Plan</b> with resident density or tram-and-rail access layers. The left rail collapses the single desktop panel, which expands on hover or click. Network, Inspect and Results share it; mobile tabs open the same views.</li><li><b>Play</b> the illustrative vehicle animation. Use Undo, Reset, Export and Import to manage scenarios.</li></ol><p>Map: drag to pan, scroll or pinch to zoom. Right-click for location data, line actions and the ruler. While drawing, right-click a station to move or remove it, or middle-drag it. Click a stop to see its service intervals. Press F for fullscreen; Display settings can hide its button. Right-drag on empty map space to rotate.</p>`);
   }
   function exportScenario() {
-    const payload = { app: 'GZM Transit Lab', networkVersion: network.version, savedAt: new Date().toISOString(), ...JSON.parse(snapshot()) };
+    const payload = { app: 'GZM Transit Lab', networkVersion: network.version, savedAt: new Date().toISOString(), ...JSON.parse(snapshot()), daypart: state.daypart };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = `gzm-transit-lab-${new Date().toISOString().slice(0, 10)}.json`; a.click();
@@ -1091,7 +1092,7 @@
   $('zoom-in-button').onclick = () => map.zoomIn({ duration: 250 });
   $('compass-button').onclick = () => map.easeTo({ bearing: 0, duration: 350 });
   $('tilt-button').onclick = () => map.easeTo({ pitch: map.getPitch() > 10 ? 0 : 45, duration: 350 });
-  $('undo-button').onclick = () => { if (!state.history.length) return; Object.assign(state, normalizeScenario(parseScenario(state.history.pop()))); rebuildRouteCache(); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast('Last edit undone.'); };
+  $('undo-button').onclick = () => { if (!state.history.length) return; const daypart = state.daypart; Object.assign(state, normalizeScenario(parseScenario(state.history.pop()))); state.daypart = daypart; rebuildRouteCache(); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast('Last edit undone.'); };
   $('export-button').onclick = exportScenario;
   $('import-button').onclick = () => $('import-file').click();
   $('import-file').onchange = async e => {
@@ -1219,14 +1220,41 @@
     setSourceData('vehicles', featureCollection([]));
   }
 
+  const daypartClock = { peak: 450, midday: 720, saturday: 720 };
+  function formatClock(minutes) {
+    const h = Math.floor(minutes / 60), m = Math.floor(minutes % 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  function renderDaypart() {
+    for (const button of document.querySelectorAll('[data-daypart]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.daypart === state.daypart));
+    }
+  }
+  function setDaypart(daypart) {
+    if (!Object.hasOwn(daypartClock, daypart) || state.daypart === daypart) return;
+    state.daypart = daypart;
+    state.baseline = null;
+    state.minutes = daypartClock[daypart];
+    state.elapsedMinutes = 0;
+    $('sim-clock').textContent = formatClock(state.minutes);
+    renderDaypart();
+    renderInspector();
+    if (!state.playing) clearVehicles();
+    else renderVehicles();
+    persist();
+    scheduleStats();
+  }
+  renderDaypart();
   $('sim-clock').title = 'Click to reset simulation time and clear vehicles';
   $('sim-clock').onclick = () => {
-    state.minutes = 420;
+    state.minutes = daypartClock[state.daypart] || 450;
     state.elapsedMinutes = 0;
-    $('sim-clock').textContent = '07:00';
-    if (!state.playing) {
-      clearVehicles();
-    }
+    $('sim-clock').textContent = formatClock(state.minutes);
+    if (!state.playing) clearVehicles();
+  };
+  document.querySelector('.daypart-switch').onclick = event => {
+    const daypart = event.target.closest('[data-daypart]')?.dataset.daypart;
+    if (daypart) setDaypart(daypart);
   };
 
   $('play-button').onclick = () => {
@@ -1253,8 +1281,7 @@
     const advance = dt / 1000 * state.speed;
     state.minutes = (state.minutes + advance) % 1440;
     state.elapsedMinutes += advance;
-    const h = Math.floor(state.minutes / 60), m = Math.floor(state.minutes % 60);
-    const clock = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const clock = formatClock(state.minutes);
     if ($('sim-clock').textContent !== clock) $('sim-clock').textContent = clock;
     if (timestamp - lastVehicles > 170) { renderVehicles(); lastVehicles = timestamp; }
     if (isDebug) {
@@ -1299,8 +1326,8 @@
     visibleRoutes.sort((a, b) => {
       const pDiff = (modePriority[a.route.mode] ?? 9) - (modePriority[b.route.mode] ?? 9);
       if (pDiff !== 0) return pDiff;
-      const hA = Number(a.route.headway) || 30;
-      const hB = Number(b.route.headway) || 30;
+      const hA = sim.resolveService(a.route, state.daypart).headway;
+      const hB = sim.resolveService(b.route, state.daypart).headway;
       return hA - hB;
     });
 
@@ -1309,9 +1336,11 @@
 
     for (const { route: r, geom } of visibleRoutes) {
       if (features.length >= maxVehicles) break;
+      const service = sim.resolveService(r, state.daypart);
+      if (!service.runs) continue;
       const length = geom.length;
       const tripMinutes = Math.max(4, length / (modeSpeed[r.mode] || 22) * 60);
-      const headway = Math.max(3, Number(r.headway) || 30);
+      const headway = service.headway;
       const bothWays = r.source === 'player' && !r.ring;
       const targetCount = Math.min(4, Math.max(bothWays ? 2 : 1, Math.ceil(tripMinutes / headway) * (bothWays ? 2 : 1)));
       const count = Math.min(targetCount, maxVehicles - features.length);

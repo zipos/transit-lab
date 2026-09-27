@@ -113,7 +113,8 @@
       overrides[id] = edit;
     }
     for (const warning of warnings) onWarning(warning);
-    return { overrides, customRoutes, customStops };
+    const daypart = data.daypart === 'midday' || data.daypart === 'saturday' ? data.daypart : 'peak';
+    return { overrides, customRoutes, customStops, daypart };
   }
   window.TransitScenario = { normalize, safeUrl, safeColor };
 })();

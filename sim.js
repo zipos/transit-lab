@@ -67,7 +67,32 @@
     pop() { const a = this.a, first = a[0], x = a.pop(); if (!a.length) return first; let i = 0; while (i * 2 + 1 < a.length) { let j = i * 2 + 1; if (j + 1 < a.length && a[j + 1][0] < a[j][0]) j++; if (a[j][0] >= x[0]) break; a[i] = a[j]; i = j; } a[i] = x; return first; }
     get length() { return this.a.length; }
   }
-  function calculate(network, customRoutes, customStops, overrides) {
+  function resolveService(route, daypart = 'peak') {
+    const headwayOf = value => clamp(Number(value) || 30, 3, 120);
+    if (route.source === 'player' || !route.dayparts) {
+      const headway = headwayOf(route.headway);
+      return { runs: true, headway, times: null, departures: 840 / headway };
+    }
+    const part = route.dayparts[daypart];
+    if (daypart !== 'peak' && !part) return { runs: false, headway: headwayOf(route.headway), times: null, departures: 0 };
+    const publishedPeak = Number(route.baseHeadway);
+    const intervalEdited = Number.isFinite(publishedPeak) && Number(route.headway) !== publishedPeak;
+    const headway = intervalEdited ? headwayOf(route.headway) : headwayOf(daypart === 'peak' || !part ? route.headway : part.headway);
+    const times = part && Array.isArray(part.times) ? part.times : (daypart === 'peak' && Array.isArray(route.times) ? route.times : null);
+    let departures;
+    if (daypart === 'peak' || !part) {
+      const baseHeadway = Number(route.baseHeadway);
+      departures = Number.isFinite(Number(route.dailyTrips)) && Number.isFinite(baseHeadway) && baseHeadway > 0
+        ? Number(route.dailyTrips) * baseHeadway / headway
+        : 840 / headway;
+    } else if (Number.isFinite(Number(part.trips))) {
+      departures = Number(part.trips) * headwayOf(part.headway) / headway;
+    } else if (Number.isFinite(Number(route.dailyTrips)) && Number.isFinite(publishedPeak) && publishedPeak > 0) {
+      departures = Number(route.dailyTrips) * publishedPeak / headway;
+    } else departures = 840 / headway;
+    return { runs: true, headway, times, departures };
+  }
+  function calculate(network, customRoutes, customStops, overrides, daypart = 'peak') {
     const routes = network.routes.concat(customRoutes).map(route => ({ ...route, ...(overrides[route.id] || {}) })).filter(route => route.active !== false);
     const stops = network.stops.concat(customStops);
     const stopMap = new Map(stops.map((s, i) => [s.id, { ...s, index: i }]));
@@ -115,12 +140,11 @@
     for (const r of routes) {
       const seq = r.stopIds.map(id => stopMap.get(id)).filter(Boolean);
       if (seq.length < 2) continue;
-      const headway = clamp(Number(r.headway) || 30, 3, 120);
+      const service = resolveService(r, daypart);
+      if (!service.runs) continue;
+      const headway = service.headway;
       const distanceFactor = routeDistanceFactor(r, seq);
-      const baseHeadway = Number(r.baseHeadway);
-      const departures = Number.isFinite(Number(r.dailyTrips)) && Number.isFinite(baseHeadway) && baseHeadway > 0
-        ? Number(r.dailyTrips) * baseHeadway / headway
-        : 840 / headway;
+      const departures = service.departures;
       const noBoard = new Set(r.noBoard || []);
       const noAlight = new Set(r.noAlight || []);
       // Ring service follows the drawn stop order and closes back to the first stop.
@@ -129,7 +153,7 @@
       for (const direction of r.source === 'player' && !ring ? [seq, seq.slice().reverse()] : [seq]) {
         const onboard = direction.map(() => addNode());
         const indexed = direction === seq;
-        const useTimes = indexed && !r.edited && Array.isArray(r.times) && r.times.length === seq.length;
+        const useTimes = indexed && !r.edited && Array.isArray(service.times) && service.times.length === seq.length;
         let length = 0;
         for (let i = 0; i < direction.length; i++) {
           if (!indexed || !noBoard.has(i)) {
@@ -142,7 +166,7 @@
             const next = (i + 1) % direction.length;
             const distance = km(direction[i].pos, direction[next].pos) * distanceFactor;
             length += distance;
-            const ride = useTimes && next > i ? Math.max(.3, r.times[next] - r.times[i]) : .55 + distance / speed[r.mode] * 60;
+            const ride = useTimes && next > i ? Math.max(.3, service.times[next] - service.times[i]) : .55 + distance / speed[r.mode] * 60;
             edge(onboard[i], onboard[next], ride);
           }
         }
@@ -226,5 +250,5 @@
       cityStats,
     };
   }
-  window.TransitSim = { calculate, km, zones, zoneCities };
+  window.TransitSim = { calculate, km, zones, zoneCities, resolveService };
 })();

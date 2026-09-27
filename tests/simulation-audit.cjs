@@ -64,6 +64,15 @@ assert.notEqual(baseline.passengers, straightFallback.passengers, 'shape-derived
 assert.equal(disabled.passengers, 0, 'walking-only paths cannot count as transit');
 assert.equal(disabled.cost, 0);
 assert.equal(disabled.load, 0);
+assert.equal(sim.calculate(network, [], [], {}, 'peak').passengers, baseline.passengers, 'peak is the stored baseline');
+const saturday = sim.calculate(network, [], [], {}, 'saturday');
+assert.notEqual(saturday.passengers, baseline.passengers, 'Saturday drops patterns with no Saturday trips');
+assert.equal(sim.resolveService(network.routes.find(route => route.mode === 'tram'), 'saturday').runs, false);
+const saturdayRail = network.routes.find(route => route.source === 'ks' && route.dayparts.saturday);
+assert.equal(sim.resolveService(saturdayRail, 'saturday').runs, true);
+assert.ok(network.routes.some(route => route.dayparts.saturday && sim.resolveService(route, 'saturday').headway !== route.headway), 'Saturday rail is not a copy of the Wednesday interval');
+const player = { id: 'test:player', source: 'player', mode: 'metro', headway: 6, active: true, stopIds: [] };
+assert.equal(sim.resolveService(player, 'saturday').headway, 6);
 assert.ok(faster.passengers >= baseline.passengers, 'higher frequency should not lose reachable trips');
 assert.ok(faster.wait <= baseline.wait, 'higher frequency should not increase average wait');
 assert.ok(faster.cost > baseline.cost);

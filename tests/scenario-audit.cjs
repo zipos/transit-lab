@@ -11,6 +11,9 @@ for (const file of ['data/network.js', 'data/templates.js', 'scenario.js']) {
 const { GZM_NETWORK: network, GZM_TEMPLATES: { templates }, TransitScenario: { normalize, safeUrl, safeColor } } = context.window;
 const clone = value => JSON.parse(JSON.stringify(value));
 const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
+assert.equal(normalize(empty()).daypart, 'peak');
+assert.equal(normalize({ ...empty(), daypart: 'saturday' }).daypart, 'saturday');
+assert.equal(normalize({ ...empty(), daypart: 'night' }).daypart, 'peak');
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/malicious-scenario.json'), 'utf8'));
 const warnings = [];
 const cleaned = clone(normalize(fixture, warning => warnings.push(warning)));

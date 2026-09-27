@@ -90,7 +90,7 @@
   </aside>
 
   <div class="bottom-bar" aria-label="Simulation and map controls">
-    <div class="bottom-group"><button id="play-button" class="play" aria-pressed="false" title="Play or pause illustrative vehicle motion">▶ Play</button><span id="sim-clock" class="sim-clock">07:00</span><button id="speed-button" title="Change simulation speed">1×</button></div>
+    <div class="bottom-group"><button id="play-button" class="play" aria-pressed="false" title="Play or pause illustrative vehicle motion">▶ Play</button><span id="sim-clock" class="sim-clock">07:00</span><div class="daypart-switch" role="group" aria-label="Service period" aria-describedby="daypart-caption"><button type="button" data-daypart="peak" aria-pressed="true">Peak</button><button type="button" data-daypart="midday" aria-pressed="false">Midday</button><button type="button" data-daypart="saturday" aria-pressed="false">Saturday</button></div><span id="daypart-caption" class="daypart-caption">Figures follow this period, not the minute.</span><button id="speed-button" title="Change simulation speed">1×</button></div>
     <details class="layers-menu" id="layers-menu"><summary>Layers</summary><div class="layers-popover">
     <div class="heatmap-control" aria-label="Planning layers">
     <div class="heatmap-control__copy"><strong>Planning layer</strong><select id="planning-layer" aria-label="Choose planning layer"><option value="population">Resident density</option><option value="access">Tram &amp; rail access</option></select><small id="heatmap-caption">GUS resident population grid</small></div>
