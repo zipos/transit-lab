@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Syntax check JavaScript files
+        run: |
+          for file in $(find . -name "*.js" -not -path "./vendor/*" -not -path "./.git/*"); do
+            echo "Checking $file"
+            node --check "$file"
+          done
+
+      - name: Compile Python data files
+        run: |
+          python3 -m py_compile data/*.py
+
+      - name: Run simulation audit
+        run: |
+          node tests/simulation-audit.cjs
+
+      - name: Run scenario audit (if present)
+        run: |
+          if [ -f tests/scenario-audit.cjs ]; then
+            node tests/scenario-audit.cjs
+          fi
+
+      - name: Install Playwright and browser dependencies
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+
+      - name: Start static web server
+        run: |
+          python3 -m http.server 8765 &
+          sleep 2
+
+      - name: Run Playwright smoke test
+        run: |
+          npx playwright test tests/smoke.spec.mjs
