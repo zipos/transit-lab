@@ -65,38 +65,22 @@
   function snapshot() { return JSON.stringify({ overrides: state.overrides, customRoutes: state.customRoutes, customStops: state.customStops }); }
   function remember() { state.history.push(snapshot()); if (state.history.length > 30) state.history.shift(); }
   function persist() { try { localStorage.setItem(STORAGE, snapshot()); } catch (_) { toast('Local storage unavailable. Export your network to keep it.'); } }
-  function normalizeScenario(data) {
-    if (!data || !data.overrides || typeof data.overrides !== 'object' || Array.isArray(data.overrides) || !Array.isArray(data.customRoutes) || !Array.isArray(data.customStops)) throw new Error('This file is not a valid network scenario.');
-    const customStops = data.customStops.filter(s => typeof s.id === 'string' && Array.isArray(s.pos) && s.pos.length === 2 && s.pos.every(Number.isFinite));
-    const positions = new Map(network.stops.concat(customStops).map(s => [s.id, s.pos]));
-    const customRoutes = data.customRoutes.filter(r => typeof r.id === 'string' && Array.isArray(r.stopIds) && ['metro', 'tram', 'rail'].includes(r.mode)).map(r => {
-      const stopIds = r.stopIds.filter(id => positions.has(id));
-      const ring = r.ring === true && stopIds.length >= 3;
-      return { ...r, ring, stopIds, geometry: ring || stopIds.length !== r.stopIds.length || !Array.isArray(r.geometry) ? [stopIds.concat(ring ? stopIds[0] : []).map(id => positions.get(id))] : r.geometry };
-    }).filter(r => r.stopIds.length >= 2);
-    const validRouteIds = new Set(network.routes.map(r => r.id));
-    const overrides = {};
-    for (const [id, raw] of Object.entries(data.overrides)) {
-      if (!validRouteIds.has(id) || !raw || typeof raw !== 'object') continue;
-      const edit = { ...raw };
-      if (Array.isArray(edit.stopIds)) {
-        const stopIds = edit.stopIds.filter(stopId => positions.has(stopId));
-        if (stopIds.length < 2) { delete edit.stopIds; delete edit.geometry; }
-        else if (stopIds.length !== edit.stopIds.length) { edit.stopIds = stopIds; edit.geometry = [stopIds.map(stopId => positions.get(stopId))]; }
-      }
-      overrides[id] = edit;
-    }
-    return { overrides, customRoutes, customStops };
+  const { safeUrl } = window.TransitScenario;
+  const MAX_SCENARIO_BYTES = 5 * 1024 * 1024;
+  const normalizeScenario = (data, onWarning = toast) => window.TransitScenario.normalize(data, onWarning);
+  function parseScenario(serialized) {
+    if (new Blob([serialized]).size > MAX_SCENARIO_BYTES) throw new Error('Scenario exceeds the file size limit (5 MB).');
+    return JSON.parse(serialized);
   }
   function loadSaved() {
     try {
       const current = localStorage.getItem(STORAGE);
       const legacy = !current && LEGACY_VERSIONS.map(version => localStorage.getItem('gzm-transit-lab:' + version)).find(Boolean);
       if (current || legacy) {
-        Object.assign(state, normalizeScenario(JSON.parse(current || legacy)));
+        Object.assign(state, normalizeScenario(parseScenario(current || legacy)));
         if (legacy) persist();
       }
-    } catch (_) { /* A damaged save simply leaves the source snapshot intact. */ }
+    } catch (err) { toast(err.message || 'Could not read the saved scenario.'); }
   }
   loadSaved();
   let showFullscreenButton = true;
@@ -730,7 +714,7 @@
     host.innerHTML = templates.map(t => {
       const mode = ['metro', 'tram', 'rail'].includes(t.mode) ? t.mode : 'rail';
       const count = Array.isArray(t.stations) ? t.stations.length : 0;
-      return `<article class="template-card"><div class="section-title"><span class="chip mode-${escape(mode)}">${escape(modeLabel(mode))}</span><span class="value">${escape(t.status || 'Historical concept')}</span></div><h3>${escape(t.title || 'Regional rail concept')}</h3><p>${escape(t.description || 'Documented regional transport proposal.')}</p><p class="fine-print">${count} named anchors · ${escape(t.confidence || 'Conceptual alignment')}</p><div class="toolbar"><a href="${escape(t.sourceUrl || '#')}" target="_blank" rel="noopener">Read source ↗</a><button class="primary" data-template-id="${escape(t.id)}">Load editable draft</button></div></article>`;
+      return `<article class="template-card"><div class="section-title"><span class="chip mode-${escape(mode)}">${escape(modeLabel(mode))}</span><span class="value">${escape(t.status || 'Historical concept')}</span></div><h3>${escape(t.title || 'Regional rail concept')}</h3><p>${escape(t.description || 'Documented regional transport proposal.')}</p><p class="fine-print">${count} named anchors · ${escape(t.confidence || 'Conceptual alignment')}</p><div class="toolbar"><a href="${escape(safeUrl(t.sourceUrl || '#'))}" target="_blank" rel="noopener">Read source ↗</a><button class="primary" data-template-id="${escape(t.id)}">Load editable draft</button></div></article>`;
     }).join('') || '<p class="empty-state">No sourced line concepts are available.</p>';
   }
   function loadTemplate(templateId) {
@@ -775,7 +759,7 @@
     $('inspector-peek-kind').textContent = state.selectedStop ? 'stop' : state.selected ? 'line' : state.tool === 'metro' ? 'draft' : 'line';
     if (state.tool === 'metro') {
       const mode = modeLabel(state.draftMode), template = state.draftTemplate;
-      const sourceNote = template ? `<div class="section"><p><b>${escape(template.status || 'Historical concept')}</b> · ${escape(template.confidence || 'Conceptual alignment')}</p><p>${escape(template.description || '')}</p><p><a href="${escape(template.sourceUrl || '#')}" target="_blank" rel="noopener">${escape(template.sourceTitle || 'Open proposal source')} ↗</a></p><p class="fine-print">The proposal source does not give an engineered alignment. ${template.stationCoordinateSourceUrl ? `Map coordinates: <a href="${escape(template.stationCoordinateSourceUrl)}" target="_blank" rel="noopener">station data source ↗</a>.` : ''}</p></div>` : '';
+      const sourceNote = template ? `<div class="section"><p><b>${escape(template.status || 'Historical concept')}</b> · ${escape(template.confidence || 'Conceptual alignment')}</p><p>${escape(template.description || '')}</p><p><a href="${escape(safeUrl(template.sourceUrl || '#'))}" target="_blank" rel="noopener">${escape(template.sourceTitle || 'Open proposal source')} ↗</a></p><p class="fine-print">The proposal source does not give an engineered alignment. ${template.stationCoordinateSourceUrl ? `Map coordinates: <a href="${escape(safeUrl(template.stationCoordinateSourceUrl))}" target="_blank" rel="noopener">station data source ↗</a>.` : ''}</p></div>` : '';
       const heading = template ? `Edit this ${mode.toLowerCase()} concept` : 'Draw your metro';
       const intro = state.movingDraftIndex !== null ? `Click the new map position for ${state.draft[state.movingDraftIndex]?.name || 'this station'}. Press Escape to cancel.` : template ? 'This sourced idea is loaded as a draft. Add or remove stations to explore a variant.' : 'Tap the map to place stations. Click near an existing stop to snap to its location and enable a transfer.';
       const routeNote = (template ? 'Draft segments are direct lines between the displayed stations. Proposed station sites marked schematic are map anchors, not surveyed locations.' : 'Metro tracks are drawn as direct segments. Tunnel engineering and construction cost are outside this sandbox.') + (state.draftRing ? ' The closing segment connects directly to the first station.' : '') + ' Right-click a station to move or remove it; middle-drag to reposition it directly.';
@@ -816,7 +800,7 @@
       $('hero-metro').onclick = enterMetroTool; $('inspector-data').onclick = openData;
       return;
     }
-    const templateNote = r.templateId ? `<p class="model-notice"><b>${escape(r.templateStatus || 'Based on a historical proposal')}</b> · ${escape(r.templateConfidence || 'Conceptual alignment')}<br>${escape(r.templateDescription || 'This line began from a sourced regional concept.')}${r.templateSourceUrl ? `<br><a href="${escape(r.templateSourceUrl)}" target="_blank" rel="noopener">${escape(r.templateSourceTitle || 'Read proposal source')} ↗</a>` : ''}<br>Stations tagged schematic are approximate map anchors; line segments are direct and do not represent an engineered alignment.</p>` : '';
+    const templateNote = r.templateId ? `<p class="model-notice"><b>${escape(r.templateStatus || 'Based on a historical proposal')}</b> · ${escape(r.templateConfidence || 'Conceptual alignment')}<br>${escape(r.templateDescription || 'This line began from a sourced regional concept.')}${r.templateSourceUrl ? `<br><a href="${escape(safeUrl(r.templateSourceUrl))}" target="_blank" rel="noopener">${escape(r.templateSourceTitle || 'Read proposal source')} ↗</a>` : ''}<br>Stations tagged schematic are approximate map anchors; line segments are direct and do not represent an engineered alignment.</p>` : '';
     const intervalHelp = r.ring ? 'Continuous one direction service, returning from the last stop to the first.' : r.source === 'player' ? 'Service runs in both directions; return trips and cost are modeled.' : r.source === 'pkm' ? 'Weekday departure-count estimate over 14 hours. Map segments run directly between published stops.' : 'Estimated from scheduled daily service in the baseline.';
     el.innerHTML = `<div class="section"><div class="section-title"><h2>LINE INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close line inspector">×</button><span class="chip mode-${escape(r.mode)}">${escape(modeLabel(r.mode))}</span></div><div class="inspector-line-title"><span class="line-badge" style="background:${escape(routeColor(r))}">${escape(r.name)}</span><div><h2>${escape(r.longName || r.name)}</h2><small>${r.source === 'player' ? `Your ${escape(modeLabel(r.mode).toLowerCase())} line` : r.source === 'ks' ? 'Koleje Śląskie GTFS' : 'GZM ZTM GTFS'} · ${r.stopIds.length} stops</small></div></div>${templateNote}${r.source === 'pkm' ? `<p class="model-notice">Main timetable sequence; branches are simplified.${r.unmappedStops?.length ? ` ${r.unmappedStops.length} stops without published map coordinates are omitted: ${escape([...new Set(r.unmappedStops)].join(', '))}.` : ''}</p>` : ''}${r.edited ? '<p class="model-notice">Stop edits use direct geometry between stops; street or track alignment is not recalculated.</p>' : ''}<div class="form-stack"><label>Service interval · minutes<input id="route-headway" type="number" min="3" max="120" value="${escape(r.headway)}"><small>${escape(intervalHelp)}</small></label>${r.source === 'player' ? `<label class="toggle-row"><input id="route-ring" type="checkbox" ${r.ring ? 'checked' : ''} ${r.stopIds.length < 3 ? 'disabled' : ''}> Ring line · one continuous direction</label>` : ''}<label class="toggle-row"><input id="route-active" type="checkbox" ${r.active === false ? '' : 'checked'}> Line in service</label></div><div class="toolbar"><button id="add-stop-button">+ Add existing stop</button>${r.ring ? '<button id="reverse-ring-button" type="button">Reverse ring direction</button>' : ''}${r.source === 'player' ? `<button id="delete-route-button" class="danger">Delete ${escape(modeLabel(r.mode).toLowerCase())} line</button>` : '<button id="revert-route-button">Revert line</button>'}</div></div><div class="section"><div class="section-title"><h3>Stop sequence</h3><span class="value">${r.stopIds.length}</span></div><div class="stop-list">${r.stopIds.map((id, i) => { const s = stop(id); return `<div class="stop-row"><span class="stop-index">${i + 1}</span><button class="stop-name-button" type="button" data-inspect-stop="${escape(id)}" title="Inspect all service at this stop">${escape(s?.name || id)}${s?.schematic ? '<small class="source-note">Schematic location</small>' : ''}</button><div class="stop-actions"><button data-stop-up="${i}" ${i === 0 ? 'disabled' : ''} title="Move earlier">↑</button><button data-stop-down="${i}" ${i === r.stopIds.length - 1 ? 'disabled' : ''} title="Move later">↓</button><button data-stop-remove="${i}" ${r.stopIds.length <= 2 ? 'disabled' : ''} title="Remove stop">×</button></div></div>`; }).join('')}</div></div>`;
     const sourceLabel = el.querySelector('.inspector-line-title small');
@@ -915,7 +899,7 @@
 
   function openData() {
     const source = population?.source || {};
-    const populationCredit = maskCells.length ? `<p><b>Population</b> — <a href="${escape(source.url || './data/population-density.json')}" target="_blank" rel="noopener">GUS 2021 resident grid</a>; ${escape(source.attribution || '')} The mask uses published 1 km polygons, including zero-resident cells. Cells are selected by their centers inside 43 <a href="https://mapy.geoportal.gov.pl/" target="_blank" rel="noopener">PRG municipal boundaries</a>, so totals are not exact full-municipality counts.</p>` : '';
+    const populationCredit = maskCells.length ? `<p><b>Population</b> — <a href="${escape(safeUrl(source.url || './data/population-density.json'))}" target="_blank" rel="noopener">GUS 2021 resident grid</a>; ${escape(source.attribution || '')} The mask uses published 1 km polygons, including zero-resident cells. Cells are selected by their centers inside 43 <a href="https://mapy.geoportal.gov.pl/" target="_blank" rel="noopener">PRG municipal boundaries</a>, so totals are not exact full-municipality counts.</p>` : '';
     const demandExplanation = state.stats?.demandPopulation ? `The selected 2021 grid contains ${format(state.stats.demandPopulation)} residents. We group them into ${sim.zones.length} municipality-based anchors. Origins use residential population; destinations use a separate estimate based on local density and proximity to the municipal population center. This is not an observed work, school or retail zoning dataset. At 0.6 assumed cross-zone trip opportunities per resident per day, this produces ${format(state.stats.demandTrips)} modeled opportunities.` : 'Population data is unavailable.';
     modal(`<span class="chip">DATA & MODEL</span><h2>Real network. Estimated outcomes.</h2><p>The playable area covers all 41 GZM member municipalities, Jaworzno and Orzesze. Outlying endpoints provide transit context.</p>
       <div class="modal-sources"><p><b>GZM ZTM</b> — <a href="https://otwartedane.metropoliagzm.pl/dataset/rozklady-jazdy-i-lokalizacja-przystankow-gtfs-wersja-rozszerzona" target="_blank" rel="noopener">GTFS dataset</a>, snapshot for 23 September 2026, CC BY.</p><p><b>Koleje Śląskie</b> — <a href="https://koleje-ks.pl/gtfs/2025-2026.zip" target="_blank" rel="noopener">2025–2026 GTFS feed</a>.</p><p><b>PKM Jaworzno</b> — <a href="https://www.pkm.jaworzno.pl/rozklady/start.php" target="_blank" rel="noopener">official timetable and route map</a>, retrieved 26 September 2026. Main timetable sequences omit indented branches and stops without published map coordinates. Pattern shapes use straight segments between stops; intervals are estimated from weekday departures. Source terms do not state a reusable feed license.</p>${populationCredit}<p><b>Rapid transit access</b> — straight-line distance from each cell center to the nearest active tram, rail or player metro stop.</p><p><b>Past concepts</b> — three schematic line drafts from a <a href="https://bip.metropoliagzm.pl/attachments/download/189291" target="_blank" rel="noopener">2018 GZM transport concept</a>.</p><p><b>Basemap</b> — <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, delivered by <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p></div>
@@ -1006,16 +990,18 @@
   $('zoom-in-button').onclick = () => map.zoomIn({ duration: 250 });
   $('compass-button').onclick = () => map.easeTo({ bearing: 0, duration: 350 });
   $('tilt-button').onclick = () => map.easeTo({ pitch: map.getPitch() > 10 ? 0 : 45, duration: 350 });
-  $('undo-button').onclick = () => { if (!state.history.length) return; Object.assign(state, JSON.parse(state.history.pop())); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast('Last edit undone.'); };
+  $('undo-button').onclick = () => { if (!state.history.length) return; Object.assign(state, normalizeScenario(parseScenario(state.history.pop()))); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast('Last edit undone.'); };
   $('export-button').onclick = exportScenario;
   $('import-button').onclick = () => $('import-file').click();
   $('import-file').onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
     try {
-      const data = JSON.parse(await file.text());
+      if (file.size > MAX_SCENARIO_BYTES) throw new Error('Scenario exceeds the file size limit (5 MB).');
+      const data = parseScenario(await file.text());
       if (![network.version, ...LEGACY_VERSIONS].includes(data.networkVersion)) throw new Error('This scenario does not match a supported network snapshot.');
-      const scenario = normalizeScenario(data);
-      remember(); Object.assign(state, scenario); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; changed(); toast(data.networkVersion !== network.version ? 'Earlier scenario imported into the metropolitan snapshot.' : 'Scenario imported.');
+      const warnings = [];
+      const scenario = normalizeScenario(data, warning => warnings.push(warning));
+      remember(); Object.assign(state, scenario); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; changed(); toast(warnings.length ? warnings.join(' ') : data.networkVersion !== network.version ? 'Earlier scenario imported into the metropolitan snapshot.' : 'Scenario imported.');
     } catch (err) { toast(err.message || 'Could not read this scenario.'); }
     e.target.value = '';
   };
