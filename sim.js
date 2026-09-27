@@ -89,7 +89,7 @@
           if (s.id >= other.id) continue;
           const dist = km(s.pos, other.pos);
           if (dist > .34) continue;
-          const t = 1.2 + dist / 4.5 * 60;
+          const t = s.area && s.area === other.area ? 2 : 1.2 + dist / 4.5 * 60;
           edge(stopMap.get(s.id).index, transferArrival.get(other.id), t, 0, 0, true);
           edge(stopMap.get(other.id).index, transferArrival.get(s.id), t, 0, 0, true);
         }
@@ -117,23 +117,33 @@
       if (seq.length < 2) continue;
       const headway = clamp(Number(r.headway) || 30, 3, 120);
       const distanceFactor = routeDistanceFactor(r, seq);
-      const departures = 840 / headway;
+      const baseHeadway = Number(r.baseHeadway);
+      const departures = Number.isFinite(Number(r.dailyTrips)) && Number.isFinite(baseHeadway) && baseHeadway > 0
+        ? Number(r.dailyTrips) * baseHeadway / headway
+        : 840 / headway;
+      const noBoard = new Set(r.noBoard || []);
+      const noAlight = new Set(r.noAlight || []);
       // Ring service follows the drawn stop order and closes back to the first stop.
       // Other player lines run in both directions; GTFS patterns are directional.
       const ring = r.source === 'player' && r.ring === true && seq.length >= 3;
       for (const direction of r.source === 'player' && !ring ? [seq, seq.slice().reverse()] : [seq]) {
         const onboard = direction.map(() => addNode());
+        const indexed = direction === seq;
+        const useTimes = indexed && !r.edited && Array.isArray(r.times) && r.times.length === seq.length;
         let length = 0;
         for (let i = 0; i < direction.length; i++) {
-          for (const platform of [direction[i].index, transferArrival.get(direction[i].id)]) {
-            edge(platform, onboard[i], headway / 2 + 1, headway / 2, 1);
+          if (!indexed || !noBoard.has(i)) {
+            for (const platform of [direction[i].index, transferArrival.get(direction[i].id)]) {
+              edge(platform, onboard[i], headway / 2 + 1, headway / 2, 1);
+            }
           }
-          edge(onboard[i], direction[i].index, .3);
+          if (!indexed || !noAlight.has(i)) edge(onboard[i], direction[i].index, .3);
           if (i < direction.length - 1 || ring) {
             const next = (i + 1) % direction.length;
             const distance = km(direction[i].pos, direction[next].pos) * distanceFactor;
             length += distance;
-            edge(onboard[i], onboard[next], .55 + distance / speed[r.mode] * 60);
+            const ride = useTimes && next > i ? Math.max(.3, r.times[next] - r.times[i]) : .55 + distance / speed[r.mode] * 60;
+            edge(onboard[i], onboard[next], ride);
           }
         }
         serviceKm += length * departures * costPerKm[r.mode];

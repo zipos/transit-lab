@@ -9,7 +9,7 @@
   const cityBoundaries = population?.cityBoundaries?.type === 'FeatureCollection' ? population.cityBoundaries : { type: 'FeatureCollection', features: [] };
   const STORAGE = 'gzm-transit-lab:' + (network && network.version);
   const DISPLAY_STORAGE = 'gzm-transit-lab:display';
-  const LEGACY_VERSIONS = ['2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'];
+  const LEGACY_VERSIONS = ['2026-09-23-gzm-v4', '2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'];
   const $ = id => document.getElementById(id);
   const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const format = n => new Intl.NumberFormat('en-GB').format(Math.round(n));
@@ -875,10 +875,16 @@
     if (state.selectedStop) {
       const station = stop(state.selectedStop);
       if (!station) { state.selectedStop = null; return renderInspector(); }
-      const services = allRoutes().filter(route => route.stopIds.includes(station.id)).map(route => {
+      const areaIds = new Set([station.id]);
+      if (station.area) {
+        for (const candidate of network.stops.concat(state.customStops)) {
+          if (candidate.area === station.area) areaIds.add(candidate.id);
+        }
+      }
+      const services = allRoutes().filter(route => route.stopIds.some(id => areaIds.has(id))).map(route => {
         const inboundStops = new Set();
         route.stopIds.forEach((id, index) => {
-          if (id !== station.id) return;
+          if (!areaIds.has(id)) return;
           const previous = route.stopIds[index - 1] || (route.ring ? route.stopIds.at(-1) : null);
           const next = route.source === 'player' && !route.ring ? route.stopIds[index + 1] : null;
           for (const neighbor of [previous, next]) if (neighbor) inboundStops.add(stop(neighbor)?.name || neighbor);
@@ -886,7 +892,7 @@
         });
         return { route, inbound: [...inboundStops].join(' / ') || 'Origin' };
       }).sort((a, b) => Number(a.route.active === false) - Number(b.route.active === false) || a.route.mode.localeCompare(b.route.mode) || a.route.name.localeCompare(b.route.name, 'pl'));
-      el.innerHTML = `<div class="section"><div class="section-title"><h2>STOP INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close stop inspector">×</button></div><h2 class="inspector-heading">${escape(station.name)}</h2><p class="intro">${escape(station.city || 'Transit stop')} · ${services.length} ${services.length === 1 ? 'pattern' : 'patterns'} using this stop</p><p class="fine-print">Intervals are scenario estimates per pattern and direction, not a live arrival board. Several patterns may share a line name.</p></div><div class="section"><div class="section-title"><h3>Service at this stop</h3><span class="value">${services.length}</span></div><div class="stop-service-list">${services.map(({ route, inbound }) => `<button type="button" class="stop-service mode-${escape(route.mode)}" data-inspect-route="${escape(route.id)}"><span class="stop-service-main"><b>${escape(route.name)} ${route.ring ? '⟳' : route.source === 'player' ? '↔' : route.direction === '1' ? '↩' : '→'}</b><small>${escape(route.mode)} · from ${escape(inbound)}</small></span><span class="stop-service-interval">${route.active === false ? 'Off' : `Every ${escape(route.headway)} min`}</span></button>`).join('') || '<p class="empty-state">No lines currently use this stop.</p>'}</div></div>`;
+      el.innerHTML = `<div class="section"><div class="section-title"><h2>STOP INSPECTOR</h2><button class="selection-close" type="button" data-clear-selection aria-label="Close stop inspector">×</button></div><h2 class="inspector-heading">${escape(station.name)}</h2><p class="intro">${escape(station.city || 'Transit stop')} · ${services.length} ${services.length === 1 ? 'pattern' : 'patterns'} using this ${areaIds.size > 1 ? 'interchange' : 'stop'}</p><p class="fine-print">Intervals are scenario estimates per pattern and direction, not a live arrival board. Several patterns may share a line name.</p></div><div class="section"><div class="section-title"><h3>Service at this stop</h3><span class="value">${services.length}</span></div><div class="stop-service-list">${services.map(({ route, inbound }) => `<button type="button" class="stop-service mode-${escape(route.mode)}" data-inspect-route="${escape(route.id)}"><span class="stop-service-main"><b>${escape(route.name)} ${route.ring ? '⟳' : route.source === 'player' ? '↔' : route.direction === '1' ? '↩' : '→'}</b><small>${escape(route.mode)} · from ${escape(inbound)}</small></span><span class="stop-service-interval">${route.active === false ? 'Off' : `Every ${escape(route.headway)} min`}</span></button>`).join('') || '<p class="empty-state">No lines currently use this stop.</p>'}</div></div>`;
       return;
     }
     const r = routeById(state.selected);

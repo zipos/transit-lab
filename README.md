@@ -34,7 +34,7 @@ The PKM importer audit requires the raw PKM snapshot; the Node audits use commit
 
 ## Data sources and attribution
 
-The 23 September 2026 metropolitan snapshot has **1,009 directional patterns and 7,672 stops**: GZM contributes 888, Koleje Śląskie 75, and PKM Jaworzno 46. The **2021 GUS resident grid** contains **2,798 selected 1 km cells**, including 677 empty cells, and **2,237,684 residents** across 43 municipalities. Imported patterns simplify branches and short turns; their intervals are estimates. The basemap can change independently of the pinned service data.
+The 23 September 2026 metropolitan snapshot (`2026-09-23-gzm-v5`) has **978 directional patterns and 7,233 stops**: GZM contributes 888, Koleje Śląskie 44, and PKM Jaworzno 46. The **2021 GUS resident grid** contains **2,798 selected 1 km cells**, including 677 empty cells, and **2,237,684 residents** across 43 municipalities. Passenger stops come from GTFS pickup and drop-off rules, so fare-zone markers and technical stops are not in the network. Koleje Śląskie keeps every short turn with at least two weekday trips. GZM and Koleje Śląskie intervals are the Wednesday 06:00–09:00 headway; PKM Jaworzno intervals remain estimates from its public timetable. The basemap can change independently of the pinned service data.
 
 Sources:
 
@@ -53,7 +53,7 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) for source terms and attribution text. Kole
 
 ## Model limits and roadmap
 
-Passenger counts, satisfaction, cost, load and vehicle motion are scenario estimates. See [model limits](docs/model-limits.md) for assumptions and remaining risks, and the [roadmap](docs/roadmap/) for planned work. The baseline is 56,080 modeled passenger trips per day; it is not observed ridership or a calibration target.
+Passenger counts, satisfaction, cost, load and vehicle motion are scenario estimates. See [model limits](docs/model-limits.md) for assumptions and remaining risks, and the [roadmap](docs/roadmap/) for planned work. The v5 baseline is 93,253 modeled passenger trips per day (6.95% of demand), with an average wait of 23.6 min, an average journey of 86.8 min, and satisfaction of 60.7. A full recalculation takes about 1.8 s. It is not observed ridership or a calibration target. The previous v4 baseline was 56,080 trips, 21 min wait, and 80.5 min journey; v5 is higher because scheduled run times replace flat speeds and virtual stops no longer sit on passenger patterns. Wait did not fall: the model still applies the peak headway all day, and many lines have few departures between 06:00 and 09:00, so that interval is longer than the old 14-hour average.
 
 ## License
 

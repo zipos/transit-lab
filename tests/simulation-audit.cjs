@@ -11,6 +11,30 @@ for (const file of ['data/network.js', 'data/population-density.js', 'sim.js']) 
 }
 
 const { GZM_NETWORK: network, GZM_POPULATION: population, TransitSim: sim } = context.window;
+assert.equal(network.version, '2026-09-23-gzm-v5');
+assert.equal(network.serviceDates.ztm.saturday, null, 'the pinned ZTM extract has no Saturday service');
+assert.equal(network.serviceDates.ks.saturday, '20260926');
+assert.ok(network.areas.some(area => area.stopIds.length > 1), 'nearby same-name platforms share an area');
+const areaIds = new Set(network.areas.map(area => area.id));
+for (const stop of network.stops) {
+  assert.ok(areaIds.has(stop.area), stop.id);
+  assert.ok(!/^granica/i.test(stop.name) && !/\[tech\]/i.test(stop.name), stop.name);
+}
+for (const route of network.routes) {
+  assert.ok(route.dayparts && 'peak' in route.dayparts && 'midday' in route.dayparts && 'saturday' in route.dayparts);
+  for (const part of [route.dayparts.peak, route.dayparts.midday, route.dayparts.saturday]) {
+    if (part === null) continue;
+    assert.ok(part.headway >= 2 && part.headway <= 120, route.id);
+  }
+  if (route.source === 'ks') assert.ok(route.dailyTrips >= 2, route.id);
+  if (route.source === 'ztm') assert.equal(route.dayparts.saturday, null, route.id);
+  if (route.color) assert.ok(!/^#(000000|ffffff)$/i.test(route.color), route.id);
+  if (Array.isArray(route.times)) {
+    assert.equal(route.times.length, route.stopIds.length, route.id);
+    for (let i = 1; i < route.times.length; i++) assert.ok(route.times[i] - route.times[i - 1] >= 0.29, route.id);
+  }
+}
+assert.ok(network.routes.filter(route => route.source === 'ks' && route.name === 'S1').length >= 3, 'S1 short turns stay in the network');
 const run = (routes = [], overrides = {}) => sim.calculate(network, routes, [], overrides);
 const baseline = run();
 const straightFallback = sim.calculate({ ...network, routes: network.routes.map(route => ({ ...route, edited: true })) }, [], [], {});

@@ -111,7 +111,7 @@ const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 const messages = [];
 const elements = { 'import-file': {} };
 const saved = new Map();
-const loader = { window: context.window, Blob, network, LEGACY_VERSIONS: ['2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'], STORAGE: 'test-current', state: {}, toast: message => messages.push(message), $: id => elements[id], remember: () => {}, changed: () => {}, persist: () => {}, localStorage: { getItem: key => saved.get(key) || null } };
+const loader = { window: context.window, Blob, network, LEGACY_VERSIONS: ['2026-09-23-gzm-v4', '2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'], STORAGE: 'test-current', state: {}, toast: message => messages.push(message), $: id => elements[id], remember: () => {}, changed: () => {}, persist: () => {}, localStorage: { getItem: key => saved.get(key) || null } };
 vm.createContext(loader);
 vm.runInContext(app.slice(app.indexOf('  const { safeUrl }'), app.indexOf('  loadSaved();')), loader);
 vm.runInContext(app.slice(app.indexOf("  $('import-file').onchange"), app.indexOf("  $('reset-button').onclick")), loader);
