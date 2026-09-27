@@ -9,6 +9,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from fetch_sources import load_sources
+
 HERE = Path(__file__).resolve().parent
 BASE = "https://www.pkm.jaworzno.pl/rozklady/"
 
@@ -105,9 +107,12 @@ def main():
     if len(routes) < 30 or len(stops) < 150:
         raise RuntimeError(f"Incomplete PKM snapshot: {len(routes)} patterns, {len(stops)} stops")
     data = {"retrieved": date.today().isoformat(), "source": BASE + "start.php", "method": "Official main timetable stop sequences and route-map coordinates; indented branch rows and stops without published map coordinates are omitted. Geometry is straight between stops and headways are estimates from weekday first-stop departure count over 14 hours.", "routes": routes, "stops": sorted(stops.values(), key=lambda s: s["id"])}
-    path = HERE / "sources" / f"pkm-jaworzno-{data['retrieved']}.json"
+    source = next(source for source in load_sources() if source["id"] == "pkm-jaworzno")
+    path = HERE / "sources" / source["filename"]
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(len(routes), "patterns", len(stops), "stops", hashlib.sha256(path.read_bytes()).hexdigest())
+    print("Run python3 data/fetch_sources.py --accept-new to explicitly adopt this regenerated snapshot.")
 
 
 if __name__ == "__main__":

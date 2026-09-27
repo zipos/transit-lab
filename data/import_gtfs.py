@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Rebuild the pinned GZM network snapshot from the included source GTFS ZIPs."""
+"""Rebuild the pinned GZM network snapshot from fetched, hash-pinned source files."""
 
 import csv
-import hashlib
 import io
 import json
 import math
@@ -11,13 +10,17 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from zipfile import ZipFile
 
+from fetch_sources import load_sources, verify_source
+
 HERE = Path(__file__).resolve().parent
+
+CATALOG = {source["id"]: source for source in load_sources()}
 SOURCES = [
-    ("ztm", HERE / "sources" / "gzm-2026-09-23.zip", "f4f5173db8b2325d70610d89865ebd62617bae33efdc33266026343ad5ec42d8"),
-    ("ks", HERE / "sources" / "ks-2025-2026.zip", "fa1e524d4a57cecff1979214f335b00a2ce7edb0eb37070641a9a2ab1cf75adb"),
+    ("ztm", HERE / "sources" / CATALOG["gzm-ztm"]["filename"], CATALOG["gzm-ztm"]["sha256"]),
+    ("ks", HERE / "sources" / CATALOG["koleje-slaskie"]["filename"], CATALOG["koleje-slaskie"]["sha256"]),
 ]
-PKM_SNAPSHOT = HERE / "sources" / "pkm-jaworzno-2026-09-26.json"
-PKM_SHA256 = "cdb23ed4fc5300a542a0ef940ff841efb2b0e4c34188969164a0e8132bbe19fb"
+PKM_SNAPSHOT = HERE / "sources" / CATALOG["pkm-jaworzno"]["filename"]
+PKM_SHA256 = CATALOG["pkm-jaworzno"]["sha256"]
 POPULATION = json.loads((HERE / "population-density.json").read_text(encoding="utf-8"))
 CORE = tuple(POPULATION["bbox"])
 BBOX = (CORE[0] - .025, CORE[1] - .018, CORE[2] + .025, CORE[3] + .018)
@@ -209,16 +212,14 @@ def load_source(source, path):
 
 def main():
     routes, stops = [], []
-    for source, path, expected_hash in SOURCES:
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        if digest != expected_hash:
-            raise SystemExit(f"Unexpected hash for {path.name}: {digest}")
+    for entry in CATALOG.values():
+        if entry["id"] in {"gzm-ztm", "koleje-slaskie", "pkm-jaworzno"}:
+            verify_source(entry)
+    for source, path, _expected_hash in SOURCES:
         source_routes, source_stops = load_source(source, path)
         routes.extend(source_routes)
         stops.extend(source_stops)
         print(source, len(source_routes), "patterns", len(source_stops), "stops")
-    if hashlib.sha256(PKM_SNAPSHOT.read_bytes()).hexdigest() != PKM_SHA256:
-        raise SystemExit("Unexpected hash for PKM Jaworzno timetable snapshot")
     pkm = json.loads(PKM_SNAPSHOT.read_text(encoding="utf-8"))
     for s in pkm["stops"]:
         s["city"] = city(s["name"], s["pos"])
