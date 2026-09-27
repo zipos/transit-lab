@@ -10,6 +10,7 @@ context.window.TRANSIT_NETWORK = JSON.parse(fs.readFileSync(path.join(root, 'dat
 context.window.TRANSIT_TEMPLATES = JSON.parse(fs.readFileSync(path.join(root, 'regions/gzm/templates.json'), 'utf8'));
 globalThis.window = context.window;
 const { normalize, safeUrl, safeColor } = await import('../src/scenario.js');
+const { t } = await import('../src/i18n/index.js');
 context.window.TransitScenario = { normalize, safeUrl, safeColor };
 const network = context.window.TRANSIT_NETWORK;
 const templates = context.window.TRANSIT_TEMPLATES.templates;
@@ -38,7 +39,7 @@ assert.equal(cleaned.customStops[0].coordinateNote, 'Valid note');
 const templateRoute = cleaned.customRoutes[1];
 assert.equal(templateRoute.templateId, templates[0].id);
 for (const [key, source] of Object.entries({ templateSourceUrl: 'sourceUrl', templateSourceTitle: 'sourceTitle', templateDescription: 'description', templateConfidence: 'confidence', templateStatus: 'status' })) {
-  assert.equal(templateRoute[key], templates[0][source]);
+  assert.deepEqual(templateRoute[key], templates[0][source]);
 }
 const serialized = JSON.stringify(cleaned);
 for (const payload of ['javascript:', 'background-image', 'scenario-attack.invalid', '__proto__', 'polluted', 'unknown-template', 'Forged metadata', 'Invalid coordinates', 'Outside network', 'metro:huge']) assert.ok(!serialized.includes(payload), payload);
@@ -118,7 +119,7 @@ const app = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
 const messages = [];
 const elements = { 'import-file': {} };
 const saved = new Map();
-const loader = { window: context.window, Blob, network, region: { id: 'gzm', name: { en: 'Upper Silesian Metropolis' } }, LEGACY_VERSIONS: ['2026-09-23-gzm-v4', '2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'], STORAGE: 'test-current', state: {}, toast: message => messages.push(message), $: id => elements[id], remember: () => {}, changed: () => {}, persist: () => {}, localStorage: { getItem: key => saved.get(key) || null } };
+const loader = { window: context.window, Blob, network, region: { id: 'gzm', name: { en: 'Upper Silesian Metropolis' } }, t, LEGACY_VERSIONS: ['2026-09-23-gzm-v4', '2026-09-23-gzm-v3', '2026-09-23-gzm-v2', '2026-09-23-gzm-v1'], STORAGE: 'test-current', state: {}, toast: message => messages.push(message), $: id => elements[id], remember: () => {}, changed: () => {}, persist: () => {}, localStorage: { getItem: key => saved.get(key) || null } };
 vm.createContext(loader);
 vm.runInContext(app.slice(app.indexOf('  const { safeUrl }'), app.indexOf('  loadSaved();')), loader);
 vm.runInContext(app.slice(app.indexOf("  $('import-file').onchange"), app.indexOf("  $('reset-button').onclick")), loader);

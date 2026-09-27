@@ -1,4 +1,5 @@
 import { html } from '../html.js';
+import { t } from '../i18n/index.js';
 
 let modalReturnFocus = null;
 let modalInertState = [];
@@ -36,7 +37,7 @@ export function createModal($) {
   function confirmDialog(message) {
     return new Promise(resolve => {
       pendingConfirm = resolve;
-      modal(html`<h2>${message}</h2><div class="toolbar"><button type="button" id="confirm-no">Cancel</button><button type="button" id="confirm-yes" class="primary">Continue</button></div>`);
+      modal(html`<h2>${message}</h2><div class="toolbar"><button type="button" id="confirm-no">${t('confirm.cancel')}</button><button type="button" id="confirm-yes" class="primary">${t('confirm.continue')}</button></div>`);
       $('confirm-yes').focus();
       $('confirm-no').onclick = () => { pendingConfirm = null; closeModal(); resolve(false); };
       $('confirm-yes').onclick = () => { pendingConfirm = null; closeModal(); resolve(true); };

@@ -1,4 +1,5 @@
 import { colors } from './modes.js';
+import { t } from './i18n/index.js';
 
 const host = () => globalThis.window || globalThis;
 const modeIds = new Set(Object.keys(colors));
@@ -16,22 +17,22 @@ const modeIds = new Set(Object.keys(colors));
   const safeColor = (value, mode = 'metro') => typeof value === 'string' && /^#[0-9a-f]{6}$/.test(value) ? value : modeIds.has(mode) ? colors[mode] : colors.metro;
 
   function normalize(data, onWarning = () => {}) {
-    if (!record(data) || !record(data.overrides) || !Array.isArray(data.customRoutes) || !Array.isArray(data.customStops)) throw new Error('This file is not a valid network scenario.');
+    if (!record(data) || !record(data.overrides) || !Array.isArray(data.customRoutes) || !Array.isArray(data.customStops)) throw new Error(t('scenario.invalid'));
     const network = host().TRANSIT_NETWORK;
     const templates = new Map((host().TRANSIT_TEMPLATES?.templates || []).map(template => [template.id, template]));
     const published = new Map(network.routes.map(route => [route.id, route]));
     const entries = Object.entries(data.overrides);
     const limit = (length, max, name) => {
-      if (length > max) throw new Error(`Scenario exceeds the ${name} limit (${max.toLocaleString('en-US')}).`);
+      if (length > max) throw new Error(t('scenario.limit', { name, max: max.toLocaleString('en-US') }));
     };
-    limit(data.customRoutes.length, 200, 'custom routes');
-    limit(data.customStops.length, 5000, 'custom stops');
-    limit(entries.length, network.routes.length, 'overrides');
+    limit(data.customRoutes.length, 200, t('scenario.customRoutes'));
+    limit(data.customStops.length, 5000, t('scenario.customStops'));
+    limit(entries.length, network.routes.length, t('scenario.overrides'));
     // Reject the entire offending sequence, while retaining other valid lines.
     const warnings = new Set();
     const withinStopLimit = ids => {
       if (ids.length <= 300) return true;
-      warnings.add('Rejected a stop sequence exceeding the stops per route limit (300).');
+      warnings.add(t('scenario.stopLimit'));
       return false;
     };
     const ids = new Set(published.keys());

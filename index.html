@@ -11,98 +11,99 @@
   <link rel="stylesheet" href="./styles.css?v=2026-09-28-region">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <script defer src="./vendor/maplibre-gl.js"></script>
-  <script type="module" src="./src/main.js?v=2026-09-28-modules"></script>
+  <script type="module" src="./src/main.js?v=2026-09-28-i18n"></script>
 </head>
 <body>
   <main id="map" aria-label="Map"></main>
-  <div id="map-context-menu" class="map-context-menu" role="menu" aria-label="Map location actions" tabindex="-1" hidden></div>
+  <div id="map-context-menu" class="map-context-menu" role="menu" data-i18n-aria="map.menu" aria-label="Map location actions" tabindex="-1" hidden></div>
 
   <header class="topbar">
-    <div class="brand">TRANSIT LAB <span class="chip" style="margin-left:9px">Sandbox alpha</span></div>
+    <div class="brand">TRANSIT LAB <span class="chip" style="margin-left:9px" data-i18n="app.alpha">Sandbox alpha</span></div>
     <div class="topbar-actions">
       <span class="top-caption"></span>
-      <button id="guide-button" title="How to play">Guide</button>
-      <button id="fullscreen-button" type="button" title="Toggle fullscreen (F)" aria-label="Enter fullscreen">⛶ Fullscreen</button>
-      <button id="settings-button" type="button" title="Display settings">⚙ Settings</button>
-      <button id="export-button" title="Export your network as JSON">Export</button>
-      <button id="import-button" title="Import a saved network">Import</button>
-      <button id="reset-button" title="Restore the original GTFS snapshot">Reset</button>
-      <button id="about-button" title="Data sources and simulation method">Data &amp; model</button>
-      <button id="mobile-menu-button" title="Scenario actions" aria-label="Scenario actions">⋯</button>
+      <div class="locale-switch" role="group" data-i18n-aria="locale.label" aria-label="Language"><button type="button" data-locale="pl" aria-pressed="false">PL</button><button type="button" data-locale="en" aria-pressed="false">EN</button></div>
+      <button id="guide-button" data-i18n="top.guide" data-i18n-title="top.guideTitle" title="How to play">Guide</button>
+      <button id="fullscreen-button" type="button" title="Toggle fullscreen (F)" data-i18n-aria="top.enterFullscreen" aria-label="Enter fullscreen">⛶ <span class="fullscreen-text" data-i18n="top.fullscreen">Fullscreen</span></button>
+      <button id="settings-button" type="button" data-i18n-title="top.settingsTitle" title="Display settings">⚙ <span data-i18n="top.settings">Settings</span></button>
+      <button id="export-button" data-i18n="top.export" data-i18n-title="top.exportTitle" title="Export your network as JSON">Export</button>
+      <button id="import-button" data-i18n="top.import" data-i18n-title="top.importTitle" title="Import a saved network">Import</button>
+      <button id="reset-button" data-i18n="top.reset" data-i18n-title="top.resetTitle" title="Restore the original GTFS snapshot">Reset</button>
+      <button id="about-button" data-i18n="top.about" data-i18n-title="top.aboutTitle" title="Data sources and simulation method">Data &amp; model</button>
+      <button id="mobile-menu-button" data-i18n-title="top.menu" data-i18n-aria="top.menu" title="Scenario actions" aria-label="Scenario actions">⋯</button>
       <input id="import-file" type="file" accept="application/json,.json" hidden>
     </div>
   </header>
-  <button id="network-rail" class="panel-rail panel-rail-left" type="button" aria-label="Hide network panel" aria-expanded="true">‹</button>
-  <nav class="mobile-tabs" aria-label="Mobile views"><button data-view="map" class="active" aria-pressed="true">Map</button><button data-view="network" aria-pressed="false">Network</button><button data-view="line" aria-pressed="false">Inspect</button><button data-view="results" aria-pressed="false">Results</button></nav>
-  <div id="ruler-panel" class="ruler-panel" role="group" aria-label="Map ruler" hidden><div><span>MAP RULER</span><strong id="ruler-distance">0 m</strong><small id="ruler-hint">Click the map to add points.</small></div><button id="ruler-finish" type="button">Finish</button><button id="ruler-clear" type="button" aria-label="Clear ruler">×</button></div>
+  <button id="network-rail" class="panel-rail panel-rail-left" type="button" data-i18n-aria="top.hidePanel" aria-label="Hide network panel" aria-expanded="true">‹</button>
+  <nav class="mobile-tabs" data-i18n-aria="nav.mobile" aria-label="Mobile views"><button data-view="map" class="active" aria-pressed="true" data-i18n="nav.map">Map</button><button data-view="network" aria-pressed="false" data-i18n="nav.network">Network</button><button data-view="line" aria-pressed="false" data-i18n="nav.inspect">Inspect</button><button data-view="results" aria-pressed="false" data-i18n="nav.results">Results</button></nav>
+  <div id="ruler-panel" class="ruler-panel" role="group" data-i18n-aria="ruler.label" aria-label="Map ruler" hidden><div><span data-i18n="ruler.title">MAP RULER</span><strong id="ruler-distance">0 m</strong><small id="ruler-hint" data-i18n="ruler.add">Click the map to add points.</small></div><button id="ruler-finish" type="button" data-i18n="ruler.finish">Finish</button><button id="ruler-clear" type="button" data-i18n-aria="ruler.clear" aria-label="Clear ruler">×</button></div>
 
-  <aside class="sidebar" aria-label="Network, inspector and results">
-    <div class="panel-peek" aria-hidden="true"><span>NETWORK</span><strong id="network-peek-total">—</strong><small>patterns</small></div>
-    <div class="pulse-strip"><span><b id="pulse-passengers">—</b> trips</span><span><b id="pulse-satisfaction">—</b> satisfaction</span></div>
-    <nav class="panel-tabs" aria-label="Panel sections"><button type="button" data-panel-tab="network" class="active" aria-pressed="true">Network</button><button type="button" data-panel-tab="inspect" aria-pressed="false">Inspect</button><button type="button" data-panel-tab="results" aria-pressed="false">Results</button></nav>
+  <aside class="sidebar" data-i18n-aria="nav.sidebar" aria-label="Network, inspector and results">
+    <div class="panel-peek" aria-hidden="true"><span data-i18n="network.peek">NETWORK</span><strong id="network-peek-total">—</strong><small data-i18n="network.patterns">patterns</small></div>
+    <div class="pulse-strip"><span><b id="pulse-passengers">—</b> <span data-i18n="network.trips">trips</span></span><span><b id="pulse-satisfaction">—</b> <span data-i18n="network.satisfaction">satisfaction</span></span></div>
+    <nav class="panel-tabs" data-i18n-aria="nav.sections" aria-label="Panel sections"><button type="button" data-panel-tab="network" class="active" aria-pressed="true" data-i18n="nav.network">Network</button><button type="button" data-panel-tab="inspect" aria-pressed="false" data-i18n="nav.inspect">Inspect</button><button type="button" data-panel-tab="results" aria-pressed="false" data-i18n="nav.results">Results</button></nav>
     <div class="section" data-panel-section="network">
-      <div class="section-title"><h1>Shape the network</h1><span class="value" id="line-total">— lines</span></div>
-      <p class="intro">Start with the published network. Change service, then test a metro of your own.</p>
+      <div class="section-title"><h1 data-i18n="network.shape">Shape the network</h1><span class="value" id="line-total">— lines</span></div>
+      <p class="intro" data-i18n="network.intro">Start with the published network. Change service, then test a metro of your own.</p>
       <div class="toolbar" style="margin-top:13px">
-        <button class="primary" id="metro-tool">+ Draw metro line</button>
-        <button id="undo-button" title="Undo the last change">↶ Undo</button>
+        <button class="primary" id="metro-tool" data-i18n="network.draw">+ Draw metro line</button>
+        <button id="undo-button" data-i18n-title="network.undoTitle" title="Undo the last change">↶ <span data-i18n="network.undo">Undo</span></button>
       </div>
     </div>
 
     <details class="section past-ideas" id="template-section" data-panel-section="network">
-      <summary>Past ideas <span id="template-count">(3)</span></summary>
-      <p class="intro">Load a historical proposal as an editable draft. Unsurveyed station sites are schematic.</p>
+      <summary><span data-i18n="network.past">Past ideas</span> <span id="template-count">(3)</span></summary>
+      <p class="intro" data-i18n="network.pastIntro">Load a historical proposal as an editable draft. Unsurveyed station sites are schematic.</p>
       <div id="template-list" class="template-list"></div>
     </details>
 
     <div class="section" data-panel-section="network">
-      <div class="section-title"><h2>Existing service</h2><span class="value" id="visible-total"></span></div>
+      <div class="section-title"><h2 data-i18n="network.existing">Existing service</h2><span class="value" id="visible-total"></span></div>
       <div class="mode-filters" id="mode-filters">
-        <button class="active" data-mode="all">All</button>
-        <button data-mode="tram">Tram</button>
-        <button data-mode="bus">Bus</button>
-        <button data-mode="rail">Rail</button>
-        <button data-mode="metro">Metro</button>
+        <button class="active" data-mode="all" data-i18n="network.all">All</button>
+        <button data-mode="tram" data-i18n="mode.tram">Tram</button>
+        <button data-mode="bus" data-i18n="mode.bus">Bus</button>
+        <button data-mode="rail" data-i18n="mode.rail">Rail</button>
+        <button data-mode="metro" data-i18n="mode.metro">Metro</button>
       </div>
-      <input id="route-search" type="search" placeholder="Find a line or destination" autocomplete="off" aria-label="Search lines">
-      <div id="route-list" class="route-list" aria-label="Routes"></div>
-      <button id="more-routes" style="width:100%;margin-top:8px;display:none">Show more lines</button>
+      <input id="route-search" type="search" data-i18n-placeholder="network.search" placeholder="Find a line or destination" autocomplete="off" data-i18n-aria="network.searchLabel" aria-label="Search lines">
+      <div id="route-list" class="route-list" data-i18n-aria="network.routes" aria-label="Routes"></div>
+      <button id="more-routes" data-i18n="network.more" style="width:100%;margin-top:8px;display:none">Show more lines</button>
     </div>
 
     <div class="section" data-panel-section="results">
-      <div class="section-title"><h2>Network results</h2><span class="value">daily estimate</span></div>
+      <div class="section-title"><h2 data-i18n="results.title">Network results</h2><span class="value" data-i18n="results.daily">daily estimate</span></div>
       <div class="stat-grid" id="stats">
-        <div class="stat-card"><small>Passenger trips</small><strong id="stat-passengers">—</strong><span class="delta" id="delta-passengers">Model estimate</span></div>
-        <div class="stat-card"><small>Satisfaction</small><strong id="stat-satisfaction">—</strong><span class="delta" id="delta-satisfaction">Model index</span></div>
-        <div class="stat-card"><small>Average wait</small><strong id="stat-wait">—</strong><span class="caption">minutes</span></div>
-        <div class="stat-card"><small>Operating cost</small><strong id="stat-cost">—</strong><span class="caption">PLN / simulated day</span></div>
+        <div class="stat-card"><small data-i18n="results.passengers">Passenger trips</small><strong id="stat-passengers">—</strong><span class="delta" id="delta-passengers" data-i18n="results.modelEstimate">Model estimate</span></div>
+        <div class="stat-card"><small data-i18n="results.satisfaction">Satisfaction</small><strong id="stat-satisfaction">—</strong><span class="delta" id="delta-satisfaction" data-i18n="results.modelIndex">Model index</span></div>
+        <div class="stat-card"><small data-i18n="results.wait">Average wait</small><strong id="stat-wait">—</strong><span class="caption" data-i18n="results.minutes">minutes</span></div>
+        <div class="stat-card"><small data-i18n="results.cost">Operating cost</small><strong id="stat-cost">—</strong><span class="caption" data-i18n="results.costUnit">PLN / simulated day</span></div>
       </div>
       <div id="secondary-stats" class="secondary-stats"></div>
       <div id="local-results" class="local-results"></div>
-      <p class="fine-print">Passenger demand and satisfaction are simulated, not measured. <button class="inline-link" id="model-link">How?</button></p>
+      <p class="fine-print"><span data-i18n="results.fine">Passenger demand and satisfaction are simulated, not measured.</span> <button class="inline-link" id="model-link" data-i18n="results.how">How?</button></p>
     </div>
     <div class="inspector" id="inspector" data-panel-section="inspect" aria-label="Selected line or metro builder"><span id="inspector-peek-label" hidden></span><span id="inspector-peek-kind" hidden></span><div id="inspector-content"></div></div>
   </aside>
 
   <div class="bottom-bar" aria-label="Simulation and map controls">
-    <div class="bottom-group"><button id="play-button" class="play" aria-pressed="false" title="Play or pause illustrative vehicle motion">▶ Play</button><span id="sim-clock" class="sim-clock">07:00</span><div class="daypart-switch" role="group" aria-label="Service period" aria-describedby="daypart-caption"><button type="button" data-daypart="peak" aria-pressed="true">Peak</button><button type="button" data-daypart="midday" aria-pressed="false">Midday</button><button type="button" data-daypart="saturday" aria-pressed="false">Saturday</button></div><span id="daypart-caption" class="daypart-caption">Figures follow this period, not the minute.</span><button id="speed-button" title="Change simulation speed">1×</button></div>
-    <details class="layers-menu" id="layers-menu"><summary>Layers</summary><div class="layers-popover">
-    <div class="heatmap-control" aria-label="Planning layers">
-    <div class="heatmap-control__copy"><strong>Planning layer</strong><select id="planning-layer" aria-label="Choose planning layer"><option value="population">Resident density</option><option value="access">Tram &amp; rail access</option></select><small id="heatmap-caption">GUS resident population grid</small></div>
-    <button id="heatmap-toggle" class="heatmap-toggle" type="button" role="switch" aria-checked="true" aria-label="Show planning layer"><span aria-hidden="true">●</span> On</button>
-    <div id="heatmap-legend" aria-label="Planning layer scale"><span id="layer-legend-title">Residents per km² · 1 km cells</span><div class="heatmap-legend-scale"></div><div class="heatmap-legend-labels"><span id="layer-legend-min">0</span><span id="layer-legend-max">8,000+</span></div></div>
+    <div class="bottom-group"><button id="play-button" class="play" aria-pressed="false" data-i18n-title="bottom.playTitle" title="Play or pause illustrative vehicle motion">▶ <span data-i18n="bottom.play">Play</span></button><span id="sim-clock" class="sim-clock" data-i18n-title="bottom.clockTitle" title="Click to reset simulation time and clear vehicles">07:00</span><div class="daypart-switch" role="group" data-i18n-aria="bottom.period" aria-label="Service period" aria-describedby="daypart-caption"><button type="button" data-daypart="peak" aria-pressed="true" data-i18n="bottom.peak">Peak</button><button type="button" data-daypart="midday" aria-pressed="false" data-i18n="bottom.midday">Midday</button><button type="button" data-daypart="saturday" aria-pressed="false" data-i18n="bottom.saturday">Saturday</button></div><span id="daypart-caption" class="daypart-caption" data-i18n="bottom.caption">Figures follow this period, not the minute.</span><button id="speed-button" data-i18n-title="bottom.speed" title="Change simulation speed">1×</button></div>
+    <details class="layers-menu" id="layers-menu"><summary data-i18n="bottom.layers">Layers</summary><div class="layers-popover">
+    <div class="heatmap-control" data-i18n-aria="bottom.planning" aria-label="Planning layers">
+    <div class="heatmap-control__copy"><strong data-i18n="bottom.planningLayer">Planning layer</strong><select id="planning-layer" data-i18n-aria="bottom.chooseLayer" aria-label="Choose planning layer"><option value="population" data-i18n="bottom.density">Resident density</option><option value="access" data-i18n="bottom.access">Tram &amp; rail access</option></select><small id="heatmap-caption">GUS resident population grid</small></div>
+    <button id="heatmap-toggle" class="heatmap-toggle" type="button" role="switch" aria-checked="true" data-i18n-aria="bottom.showLayer" aria-label="Show planning layer"><span aria-hidden="true">●</span> <span data-i18n="bottom.on">On</span></button>
+    <div id="heatmap-legend" data-i18n-aria="bottom.scale" aria-label="Planning layer scale"><span id="layer-legend-title" data-i18n="bottom.densityLegend">Residents per km² · 1 km cells</span><div class="heatmap-legend-scale"></div><div class="heatmap-legend-labels"><span id="layer-legend-min">0</span><span id="layer-legend-max">8,000+</span></div></div>
     </div>
-    <div id="map-legend" class="map-legend" role="group" aria-label="Show or hide transport modes on the map">
-    <button type="button" data-map-mode="tram" aria-pressed="true" aria-label="Hide tram routes on map" title="Hide tram routes"><i class="legend-tram" aria-hidden="true"></i>Tram</button>
-    <button type="button" data-map-mode="bus" aria-pressed="true" aria-label="Hide bus routes on map" title="Hide bus routes"><i class="legend-bus" aria-hidden="true"></i>Bus</button>
-    <button type="button" data-map-mode="rail" aria-pressed="true" aria-label="Hide rail routes on map" title="Hide rail routes"><i class="legend-rail" aria-hidden="true"></i>Rail</button>
-    <button type="button" data-map-mode="metro" aria-pressed="true" aria-label="Hide metro routes on map" title="Hide metro routes"><i class="legend-metro" aria-hidden="true"></i>Metro</button>
+    <div id="map-legend" class="map-legend" role="group" data-i18n-aria="bottom.modes" aria-label="Show or hide transport modes on the map">
+    <button type="button" data-map-mode="tram" aria-pressed="true" data-i18n-aria="bottom.hideTram" aria-label="Hide tram routes on map" data-i18n-title="bottom.hideTramTitle" title="Hide tram routes"><i class="legend-tram" aria-hidden="true"></i><span data-i18n="mode.tram">Tram</span></button>
+    <button type="button" data-map-mode="bus" aria-pressed="true" data-i18n-aria="bottom.hideBus" aria-label="Hide bus routes on map" data-i18n-title="bottom.hideBusTitle" title="Hide bus routes"><i class="legend-bus" aria-hidden="true"></i><span data-i18n="mode.bus">Bus</span></button>
+    <button type="button" data-map-mode="rail" aria-pressed="true" data-i18n-aria="bottom.hideRail" aria-label="Hide rail routes on map" data-i18n-title="bottom.hideRailTitle" title="Hide rail routes"><i class="legend-rail" aria-hidden="true"></i><span data-i18n="mode.rail">Rail</span></button>
+    <button type="button" data-map-mode="metro" aria-pressed="true" data-i18n-aria="bottom.hideMetro" aria-label="Hide metro routes on map" data-i18n-title="bottom.hideMetroTitle" title="Hide metro routes"><i class="legend-metro" aria-hidden="true"></i><span data-i18n="mode.metro">Metro</span></button>
     </div></div></details>
-    <div class="bottom-group map-orientation"><button id="zoom-out-button" title="Zoom out" aria-label="Zoom out">−</button><button id="zoom-in-button" title="Zoom in" aria-label="Zoom in">+</button><button id="compass-button" title="Reset north" aria-label="Reset map orientation">◆</button><button id="tilt-button" title="Toggle map tilt" aria-label="Toggle map tilt">◩</button><button id="fit-button" title="Fit the region">◎ Fit</button></div>
+    <div class="bottom-group map-orientation"><button id="zoom-out-button" data-i18n-title="bottom.zoomOut" data-i18n-aria="bottom.zoomOut" title="Zoom out" aria-label="Zoom out">−</button><button id="zoom-in-button" data-i18n-title="bottom.zoomIn" data-i18n-aria="bottom.zoomIn" title="Zoom in" aria-label="Zoom in">+</button><button id="compass-button" data-i18n-title="bottom.north" data-i18n-aria="bottom.northAria" title="Reset north" aria-label="Reset map orientation">◆</button><button id="tilt-button" data-i18n-title="bottom.tilt" data-i18n-aria="bottom.tilt" title="Toggle map tilt" aria-label="Toggle map tilt">◩</button><button id="fit-button" title="Fit the region">◎ <span data-i18n="bottom.fit">Fit</span></button></div>
   </div>
 
-  <div id="loading" role="status"><span class="loader-dot"></span><strong>Opening the network</strong><small>Loading map and service snapshot…</small></div>
+  <div id="loading" role="status"><span class="loader-dot"></span><strong data-i18n="loading.title">Opening the network</strong><small data-i18n="loading.detail">Loading map and service snapshot…</small></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <div id="modal" class="modal" hidden><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button id="modal-close" class="modal-close" aria-label="Close dialog">×</button><div id="modal-content"></div></div></div>
+  <div id="modal" class="modal" hidden><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1"><button id="modal-close" class="modal-close" data-i18n-aria="modal.close" aria-label="Close dialog">×</button><div id="modal-content"></div></div></div>
 </body>
 </html>

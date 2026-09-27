@@ -1,13 +1,15 @@
 /* Loads one region. file:// cannot fetch the JSON snapshots. */
+import { t, getLocale, applyDom } from './i18n/index.js';
+
 const $ = id => document.getElementById(id);
-const language = (navigator.language || '').toLowerCase().startsWith('pl') ? 'pl' : 'en';
-const label = value => value?.[language] || value?.en || value?.pl || '';
+const language = () => getLocale();
+const label = value => value?.[language()] || value?.en || value?.pl || '';
 
 function fail(message) {
   const card = $('loading');
   if (!card) return;
   card.classList.add('failed');
-  card.querySelector('strong').textContent = 'Could not open this region';
+    card.querySelector('strong').textContent = t('loading.failed');
   card.querySelector('small').textContent = message;
 }
 
@@ -40,7 +42,7 @@ function showPicker(index) {
   $('loading')?.remove();
   const picker = document.createElement('div');
   picker.className = 'region-picker';
-  picker.innerHTML = `<div class="region-picker-card"><p>TRANSIT LAB</p><h1>Choose a region</h1><div class="region-picker-list">${index.map(region => `<button type="button" data-region="${region.id}" ${region.status === 'live' ? '' : 'disabled'}>${label(region.name)}<small>${region.status}</small></button>`).join('')}</div></div>`;
+  picker.innerHTML = `<div class="region-picker-card"><p>${t('app.name')}</p><h1>${t('picker.choose')}</h1><div class="region-picker-list">${index.map(region => `<button type="button" data-region="${region.id}" ${region.status === 'live' ? '' : 'disabled'}>${label(region.name)}<small>${t('picker.' + region.status)}</small></button>`).join('')}</div></div>`;
   picker.addEventListener('click', event => {
     const id = event.target.closest('[data-region]')?.dataset.region;
     if (!id) return;
@@ -51,13 +53,15 @@ function showPicker(index) {
   document.body.appendChild(picker);
 }
 
+export function paintRegion(region) { applyChrome(region); }
+
 function applyChrome(region) {
-  document.title = `${label(region.shortName)} / Transit Lab`;
-  document.documentElement.lang = language;
-  $('map').setAttribute('aria-label', `Map of ${label(region.name)}`);
-  document.querySelector('.brand').innerHTML = `${label(region.shortName)} <span style="color:#8291a1;font-weight:600">/</span> TRANSIT LAB <span class="chip" style="margin-left:9px">Sandbox alpha</span>`;
-  document.querySelector('.top-caption').textContent = `${region.municipalities.length} municipalities · one network`;
-  $('fit-button').title = `Fit all ${region.municipalities.length} municipalities`;
+  document.title = `${label(region.shortName)} / ${t('app.name')}`;
+    document.documentElement.lang = language();
+    $('map').setAttribute('aria-label', t('map.of', { name: label(region.name) }));
+    document.querySelector('.brand').innerHTML = `${label(region.shortName)} <span style="color:#8291a1;font-weight:600">/</span> ${t('app.name')} <span class="chip" style="margin-left:9px">${t('app.alpha')}</span>`;
+    document.querySelector('.top-caption').textContent = t('top.caption', { count: region.municipalities.length });
+    $('fit-button').title = t('top.fit', { count: region.municipalities.length });
 }
 
 export async function loadRegion() {
@@ -72,7 +76,7 @@ export async function loadRegion() {
   const region = await loadJson(`./regions/${id}/region.json`);
   const lock = await loadJson(`./data/${id}/manifest.lock.json`);
   const small = $('loading')?.querySelector('small');
-  const progress = (received, total) => { if (small && total) small.textContent = `Loading service snapshot… ${Math.round(100 * received / total)}%`; };
+    const progress = (received, total) => { if (small && total) small.textContent = t('loading.progress', { percent: Math.round(100 * received / total) }); };
   const [network, population, templates] = await Promise.all([
     loadJson(`./data/${id}/network.json?v=${lock.network.sha256}`, progress),
     loadJson(`./data/${id}/population.json?v=${lock.population.sha256}`, progress),
@@ -92,5 +96,5 @@ export async function loadRegion() {
 }
 
 export function reportRegionError(error) {
-  fail(error?.message || 'The region files could not be fetched. Use a local web server; opening the HTML file directly will not work.');
+  fail(error?.message || t('loading.file'));
 }

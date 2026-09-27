@@ -2621,3 +2621,11 @@ body[data-network-open='false'] .ruler-panel { left: 66px; }
   .maplibregl-ctrl-bottom-right { bottom: 63px; }
   .ruler-panel, body[data-network-open='false'] .ruler-panel { left: 12px; bottom: 125px; }
 }
+
+.locale-switch { display: inline-flex; align-items: center; gap: 2px; }
+.locale-switch button { min-width: 36px; padding: 0 8px; }
+.locale-switch button[aria-pressed='true'] { border-color: transparent; background: #152d40; color: #fff; }
+.panel-tabs button { white-space: normal; line-height: 1.15; overflow-wrap: anywhere; }
+.stat-card :is(.label, small, .stat-label) { overflow-wrap: anywhere; }
+.bottom-bar { max-width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center; }
+.brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

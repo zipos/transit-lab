@@ -1,7 +1,8 @@
-import { loadRegion, reportRegionError } from './region.js';
+import { loadRegion, reportRegionError, paintRegion } from './region.js';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js';
 import { createModel } from './sim/model.js';
 import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js';
-import { colors, modeLabel, cruiseSpeed } from './modes.js';
+import { colors, cruiseSpeed } from './modes.js';
 import { renderRouteList } from './ui/list.js';
 import { renderDraftInspector } from './ui/draft.js';
 import { renderStopInspector } from './ui/inspector-stop.js';
@@ -10,6 +11,10 @@ import { renderResults } from './ui/results.js';
 import { createModal } from './ui/modal.js';
 
 window.TransitScenario = { normalize, safeUrl: scenarioSafeUrl, safeColor };
+applyDom();
+document.querySelectorAll('[data-locale]').forEach(button => {
+  button.addEventListener('click', () => setLocale(button.dataset.locale));
+});
 
 async function startApp() {
   let loaded;
@@ -48,7 +53,12 @@ async function startApp() {
   const LEGACY_VERSIONS = region.legacyNetworkVersions || [];
   const $ = id => document.getElementById(id);
   const escape = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  const format = n => new Intl.NumberFormat('en-GB').format(Math.round(n));
+  const format = n => fmtNumber(n);
+  function modeLabel(mode) {
+    const key = `mode.${mode || 'line'}`;
+    const value = t(key);
+    return value === key ? String(mode || 'line') : value;
+  }
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
   const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
@@ -75,7 +85,7 @@ async function startApp() {
 
   if (!network || !sim || !window.maplibregl) {
     $('loading')?.classList.add('failed');
-    $('loading').innerHTML = '<strong>Could not open the game</strong><small>Required game scripts failed to load. Please check your browser or local server and reload.</small>';
+    $('loading').innerHTML = `<strong>${escape(t('loading.game'))}</strong><small>${escape(t('loading.gameDetail'))}</small>`;
     return;
   }
 
@@ -155,12 +165,12 @@ async function startApp() {
   }
   function snapshot() { return JSON.stringify({ overrides: state.overrides, customRoutes: state.customRoutes, customStops: state.customStops }); }
   function remember() { state.history.push(snapshot()); if (state.history.length > 30) state.history.shift(); }
-  function persist() { try { localStorage.setItem(STORAGE, JSON.stringify({ ...JSON.parse(snapshot()), daypart: state.daypart })); } catch (_) { toast('Local storage unavailable. Export your network to keep it.'); } }
+  function persist() { try { localStorage.setItem(STORAGE, JSON.stringify({ ...JSON.parse(snapshot()), daypart: state.daypart })); } catch (_) { toast(t('toast.storage')); } }
   const { safeUrl } = window.TransitScenario;
   const MAX_SCENARIO_BYTES = 5 * 1024 * 1024;
   const normalizeScenario = (data, onWarning = toast) => window.TransitScenario.normalize(data, onWarning);
   function parseScenario(serialized) {
-    if (new Blob([serialized]).size > MAX_SCENARIO_BYTES) throw new Error('Scenario exceeds the file size limit (5 MB).');
+    if (new Blob([serialized]).size > MAX_SCENARIO_BYTES) throw new Error(t('scenario.size'));
     return JSON.parse(serialized);
   }
   function loadSaved() {
@@ -171,7 +181,7 @@ async function startApp() {
         Object.assign(state, normalizeScenario(parseScenario(current || legacy)));
         if (legacy) persist();
       }
-    } catch (err) { toast(err.message || 'Could not read the saved scenario.'); }
+    } catch (err) { toast(err.message || t('toast.saved')); }
   }
   loadSaved();
   rebuildRouteCache();
@@ -180,8 +190,8 @@ async function startApp() {
   function renderFullscreen() {
     const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
     $('fullscreen-button').hidden = !showFullscreenButton && !active;
-    $('fullscreen-button').innerHTML = `<span aria-hidden="true">⛶</span><span class="fullscreen-text">${active ? 'Exit fullscreen' : 'Fullscreen'}</span>`;
-    $('fullscreen-button').setAttribute('aria-label', active ? 'Exit fullscreen' : 'Enter fullscreen');
+    $('fullscreen-button').innerHTML = `<span aria-hidden="true">⛶</span><span class="fullscreen-text">${active ? t('top.exitFullscreen') : t('top.fullscreen')}</span>`;
+    $('fullscreen-button').setAttribute('aria-label', active ? t('top.exitFullscreen') : t('top.enterFullscreen'));
     $('fullscreen-button').setAttribute('aria-pressed', String(active));
   }
   async function toggleFullscreen() {
@@ -192,16 +202,17 @@ async function startApp() {
       } else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
       else if (document.documentElement.webkitRequestFullscreen) await document.documentElement.webkitRequestFullscreen();
       else throw new Error('Fullscreen API unavailable');
-    } catch (_) { toast('Fullscreen is unavailable in this browser.'); }
+    } catch (_) { toast(t('toast.fullscreen')); }
   }
   function openSettings() {
-    const introLabel = introText[introLanguage()].showAgain;
-    modal(`<span class="chip">DISPLAY SETTINGS</span><h2>Display</h2><div class="form-stack"><button id="settings-fullscreen" type="button">${document.fullscreenElement || document.webkitFullscreenElement ? 'Exit' : 'Enter'} fullscreen</button><label class="toggle-row"><input id="settings-fullscreen-visible" type="checkbox" ${showFullscreenButton ? 'checked' : ''}> Show fullscreen button</label><button id="settings-intro" type="button">${escape(introLabel)}</button><p class="fine-print">Press F to toggle fullscreen while the map or a panel has focus. Escape exits fullscreen.</p></div>`);
+    const fullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    modal(`<span class="chip">${escape(t('settings.chip'))}</span><h2>${escape(t('settings.title'))}</h2><div class="form-stack"><div class="locale-switch" role="group">${escape(t('settings.language'))} <button type="button" data-settings-locale="pl">PL</button> <button type="button" data-settings-locale="en">EN</button></div><button id="settings-fullscreen" type="button">${escape(fullscreen ? t('settings.exit') : t('settings.enter'))}</button><label class="toggle-row"><input id="settings-fullscreen-visible" type="checkbox" ${showFullscreenButton ? 'checked' : ''}> ${escape(t('settings.showButton'))}</label><button id="settings-intro" type="button">${escape(t('intro.showAgain'))}</button><p class="fine-print">${escape(t('settings.note'))}</p></div>`);
     $('settings-fullscreen').onclick = async () => { closeModal(); await toggleFullscreen(); };
     $('settings-intro').onclick = () => { writeIntroSettings({ introDone: false }); intro.index = 0; intro.active = false; intro.started = false; closeModal(); maybeStartIntro(); };
+    $('modal-content').querySelectorAll('[data-settings-locale]').forEach(button => { button.onclick = () => { setLocale(button.dataset.settingsLocale); closeModal(); }; });
     $('settings-fullscreen-visible').onchange = e => {
       showFullscreenButton = e.target.checked;
-      try { localStorage.setItem(DISPLAY_STORAGE, JSON.stringify({ showFullscreenButton })); } catch (_) {}
+      writeIntroSettings({ showFullscreenButton });
       renderFullscreen();
     };
   }
@@ -245,7 +256,7 @@ async function startApp() {
     document.body.dataset[left ? 'networkOpen' : 'inspectorOpen'] = String(open);
     const rail = $('network-rail');
     rail.setAttribute('aria-expanded', String(open));
-    rail.setAttribute('aria-label', `${open ? 'Hide' : 'Show'} network panel`);
+    rail.setAttribute('aria-label', open ? t('top.hidePanel') : t('top.showPanel'));
     rail.textContent = open ? '‹' : '›';
     setTimeout(() => map?.resize(), 190);
   }
@@ -259,16 +270,16 @@ async function startApp() {
   function renderPopulationControl() {
     const toggle = $('heatmap-toggle');
     toggle.setAttribute('aria-checked', String(state.populationVisible));
-    toggle.setAttribute('aria-label', `${state.populationVisible ? 'Hide' : 'Show'} selected planning layer`);
-    toggle.lastChild.textContent = state.populationVisible ? ' On' : ' Off';
+    toggle.setAttribute('aria-label', state.populationVisible ? t('bottom.hideLayer') : t('bottom.showLayer'));
+    toggle.lastChild.textContent = ` ${state.populationVisible ? t('bottom.on') : t('bottom.off')}`;
     $('heatmap-legend').hidden = !state.populationVisible;
     $('planning-layer').value = state.activeLayer;
     $('heatmap-legend').dataset.layer = state.activeLayer;
     const isAccess = state.activeLayer === 'access';
-    $('heatmap-caption').textContent = isAccess ? '2026 GTFS · cell-center straight-line distance' : `${population?.source?.year || '2021'} · ${population?.source?.shortName || 'GUS 1 km resident grid'}`;
-    $('layer-legend-title').textContent = isAccess ? 'To active tram, rail or metro stop' : 'Residents per km² · 1 km cells';
+    $('heatmap-caption').textContent = isAccess ? t('bottom.accessCaption') : t('bottom.densityCaption', { year: population?.source?.year || '2021', source: population?.source?.shortName || t('bottom.densitySource') });
+    $('layer-legend-title').textContent = isAccess ? t('bottom.accessLegend') : t('bottom.densityLegend');
     $('layer-legend-min').textContent = '0';
-    $('layer-legend-max').textContent = isAccess ? '3 km+' : '8,000+';
+    $('layer-legend-max').textContent = isAccess ? t('bottom.accessMax') : `${fmtNumber(8000)}+`;
     for (const [id, layer] of [['city-population-fill', 'shared'], ['population-grid-fill', 'population'], ['city-population-outline', 'shared'], ['access-grid-fill', 'access']]) {
       if (map?.getLayer(id)) map.setLayoutProperty(id, 'visibility', state.populationVisible && (layer === 'shared' || state.activeLayer === layer) ? 'visible' : 'none');
     }
@@ -293,12 +304,12 @@ async function startApp() {
     if (loading) {
       loading.classList.add('failed');
       if (isOpenFreeMap) {
-        loading.innerHTML = '<strong>Could not load OpenFreeMap tiles</strong><small>A request to OpenFreeMap (tiles.openfreemap.org) failed. The game files loaded, but the basemap could not be reached.</small>';
+        loading.innerHTML = `<strong>${escape(t('loading.tiles'))}</strong><small>${escape(t('loading.tilesDetail'))}</small>`;
       } else {
-        loading.innerHTML = '<strong>Could not load map</strong><small>MapLibre encountered an error loading map resources.</small>';
+        loading.innerHTML = `<strong>${escape(t('loading.map'))}</strong><small>${escape(t('loading.mapDetail'))}</small>`;
       }
     } else if (isOpenFreeMap && /tiles\.openfreemap\.org/i.test(msg + url)) {
-      toast('OpenFreeMap tiles failed to load.');
+      toast(t('toast.tiles'));
     }
   });
   const restoreGameLayers = () => {
@@ -496,9 +507,10 @@ async function startApp() {
     document.querySelectorAll('.map-legend [data-map-mode]').forEach(button => {
       const visible = !!state.mapModes[button.dataset.mapMode];
       const label = button.dataset.mapMode;
+      const modeKey = label.charAt(0).toUpperCase() + label.slice(1);
       button.setAttribute('aria-pressed', String(visible));
-      button.setAttribute('aria-label', `${visible ? 'Hide' : 'Show'} ${label} routes on map`);
-      button.title = `${visible ? 'Hide' : 'Show'} ${label} routes`;
+      button.setAttribute('aria-label', t(visible ? `bottom.hide${modeKey}` : `bottom.show${modeKey}`));
+      button.title = t(visible ? `bottom.hide${modeKey}Title` : `bottom.show${modeKey}Title`);
     });
     if (state.playing || vehiclesActive) renderVehicles();
   }
@@ -570,15 +582,15 @@ async function startApp() {
   function addDraftStation(pos) {
     const nearby = nearestStop(pos, .33);
     const finalPos = nearby ? nearby.pos : pos;
-    if (state.draft.some(s => sim.km(s.pos, finalPos) < .12)) return toast('Place stations at least 120 m apart.');
-    state.draft.push({ name: nearby ? nearby.name : `Station ${state.draft.length + 1}`, pos: finalPos, schematic: !nearby, coordinateNote: nearby ? 'Snapped to a published transit stop.' : 'Player-placed map coordinate.' });
-    renderInspector(); renderDraft(); toast(`${state.draft.length} station${state.draft.length === 1 ? '' : 's'} in line draft`);
+    if (state.draft.some(s => sim.km(s.pos, finalPos) < .12)) return toast(t('toast.apart'));
+    state.draft.push({ name: nearby ? nearby.name : t('draft.stationNumber', { n: state.draft.length + 1 }), pos: finalPos, schematic: !nearby, coordinateNote: nearby ? t('draft.snapped') : t('draft.placed') });
+    renderInspector(); renderDraft(); toast(t(state.draft.length === 1 ? 'toast.draftCount' : 'toast.draftCountPlural', { count: state.draft.length }));
   }
   function addExistingStop(pos) {
     const nearby = nearestStop(pos, .55);
-    if (!nearby) return toast('No published stop nearby. Zoom in and click an existing stop.');
+    if (!nearby) return toast(t('toast.noStop'));
     const route = routeById(state.selected);
-    if (!route || route.stopIds.includes(nearby.id)) return toast('This line already uses that stop.');
+    if (!route || route.stopIds.includes(nearby.id)) return toast(t('toast.already'));
     const ids = route.stopIds.slice(); let index = ids.length - 1, best = Infinity;
     for (let i = 1; i < ids.length; i++) {
       const a = stop(ids[i - 1]), b = stop(ids[i]); if (!a || !b) continue;
@@ -586,16 +598,16 @@ async function startApp() {
       if (score < best) { best = score; index = i; }
     }
     ids.splice(index, 0, nearby.id); setRouteStops(route, ids);
-    state.tool = 'inspect'; setMobileView('line'); map.getCanvas().style.cursor = ''; toast(`Added ${nearby.name}. Route geometry is now simplified.`);
+    state.tool = 'inspect'; setMobileView('line'); map.getCanvas().style.cursor = ''; toast(t('toast.added', { name: nearby.name }));
   }
   function repositionDraftStation(index, pos) {
     const current = state.draft[index];
     if (!current) return;
     const nearby = nearestStop(pos, .12);
     const finalPos = nearby ? nearby.pos : pos;
-    if (state.draft.some((s, i) => i !== index && sim.km(s.pos, finalPos) < .12)) { renderDraft(); return toast('Place stations at least 120 m apart.'); }
-    state.draft[index] = { ...current, pos: finalPos, schematic: !nearby, coordinateNote: nearby ? 'Snapped to a published transit stop after moving.' : 'Player-adjusted map coordinate.' };
-    renderInspector(); renderDraft(); toast(`${current.name} moved.`);
+    if (state.draft.some((s, i) => i !== index && sim.km(s.pos, finalPos) < .12)) { renderDraft(); return toast(t('toast.apart')); }
+    state.draft[index] = { ...current, pos: finalPos, schematic: !nearby, coordinateNote: nearby ? t('draft.snappedMoved') : t('draft.adjusted') };
+    renderInspector(); renderDraft(); toast(t('toast.moved', { name: current.name }));
   }
   function draftIndexAt(point, maxPx = 20) {
     if (state.tool !== 'metro') return -1;
@@ -653,15 +665,15 @@ async function startApp() {
     }
     const display = rulerActive && rulerHover ? rulerPoints.concat([rulerHover]) : rulerPoints;
     $('ruler-distance').textContent = formatRulerDistance(rulerDistance(display));
-    $('ruler-hint').textContent = rulerActive ? 'Click map to add points · right-click for options' : 'Finished · right-click to extend or clear';
+    $('ruler-hint').textContent = rulerActive ? t('ruler.active') : t('ruler.done');
     $('ruler-finish').hidden = !rulerActive;
     setSourceData('ruler-line', featureCollection(display.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: display } }] : []));
     setSourceData('ruler-points', featureCollection(rulerPoints.map((pos, index) => pointFeature({ id: `ruler:${index}`, name: '', pos }))));
   }
-  function startRuler(pos) { rulerPoints = [pos]; rulerHover = null; rulerActive = true; renderRuler(); toast('Ruler started. Click the map to add points.'); }
+  function startRuler(pos) { rulerPoints = [pos]; rulerHover = null; rulerActive = true; renderRuler(); toast(t('ruler.started')); }
   function addRulerPoint(pos) {
     if (rulerPoints.length && sim.km(rulerPoints[rulerPoints.length - 1], pos) < .01) return;
-    rulerPoints.push(pos); rulerHover = null; rulerActive = true; renderRuler(); toast(`Ruler: ${formatRulerDistance(rulerDistance(rulerPoints))}.`);
+    rulerPoints.push(pos); rulerHover = null; rulerActive = true; renderRuler(); toast(t('toast.rulerDistance', { distance: formatRulerDistance(rulerDistance(rulerPoints)) }));
   }
   function finishRuler() { if (!rulerPoints.length) return; rulerActive = false; rulerHover = null; renderRuler(); }
   function clearRuler() { rulerPoints = []; rulerHover = null; rulerActive = false; renderRuler(); }
@@ -690,7 +702,7 @@ async function startApp() {
     const pos = [event.lngLat.lng, event.lngLat.lat];
     const cell = maskCells.find(item => pointInGeometry(pos, item.geometry));
     const municipality = cityBoundaries.features.find(item => pointInGeometry(pos, item.geometry));
-    const cityName = municipality?.properties?.name || cell?.city || 'Map location';
+    const cityName = municipality?.properties?.name || cell?.city || t('context.fallback');
     let rapidStop = null, rapidKm = Infinity;
     for (const station of accessGrid().rapidStops) {
       const distance = sim.km(pos, station.pos);
@@ -705,23 +717,24 @@ async function startApp() {
     const canAddStop = nearby && selected && !selected.stopIds.includes(nearby.id) && distance <= 550;
     contextLocation = { pos, nearby, route, draftIndex };
     const menu = $('map-context-menu');
-    menu.innerHTML = `<div class="map-context-heading" role="presentation"><span class="map-context-eyebrow">MAP LOCATION</span><strong>${escape(cityName)}</strong><small>${pos[1].toFixed(5)}° N · ${pos[0].toFixed(5)}° E</small></div>
+    const walkMinutes = nearby ? Math.max(1, Math.round(distance / 75)) : 0;
+    menu.innerHTML = `<div class="map-context-heading" role="presentation"><span class="map-context-eyebrow">${escape(t('context.eyebrow'))}</span><strong>${escape(cityName)}</strong><small>${pos[1].toFixed(5)}° N · ${pos[0].toFixed(5)}° E</small></div>
       <div class="map-context-facts" role="presentation">
-        <div><span>Resident grid · ${escape(population?.source?.year || '2021')}</span><b>${cell ? `${format(+cell.density)} / km²` : 'No grid cell'}</b><small>${cell ? `${format(+cell.population || 0)} residents in this published 1 km cell` : 'Outside the selected eight-city grid'}</small></div>
-        <div><span>Tram, rail & metro access</span><b>${rapidStop ? `${format(Math.round(rapidKm * 1000))} m` : 'No active service'}</b><small>${rapidStop ? `Straight-line to ${escape(rapidStop.name)} · map layer uses cell centers` : 'Enable a line or draw a metro to change the access layer'}</small></div>
-        <div><span>Nearest published stop</span><b>${nearby ? escape(nearby.name) : 'None within 1 km'}</b><small>${nearby ? `${format(distance)} m straight-line · about ${Math.max(1, Math.round(distance / 75))} min walking` : 'Zoom toward the transit network to find a stop'}</small></div>
+        <div><span>${escape(t('context.grid', { year: population?.source?.year || '2021' }))}</span><b>${cell ? escape(t('context.density', { density: format(+cell.density) })) : escape(t('context.noCell'))}</b><small>${cell ? escape(t('context.residents', { count: format(+cell.population || 0) })) : escape(t('context.outside'))}</small></div>
+        <div><span>${escape(t('context.access'))}</span><b>${rapidStop ? `${format(Math.round(rapidKm * 1000))} m` : escape(t('context.noService'))}</b><small>${rapidStop ? escape(t('context.straight', { name: rapidStop.name })) : escape(t('context.enable'))}</small></div>
+        <div><span>${escape(t('context.nearest'))}</span><b>${nearby ? escape(nearby.name) : escape(t('context.none'))}</b><small>${nearby ? escape(t('context.walk', { distance: format(distance), minutes: walkMinutes })) : escape(t('context.zoom'))}</small></div>
       </div>
       <div class="map-context-actions" role="presentation">
-        ${draftIndex >= 0 ? `<button type="button" role="menuitem" data-context-action="move-stop">Move ${escape(state.draft[draftIndex].name)} to next click</button><button type="button" role="menuitem" data-context-action="remove-stop" class="map-context-danger">Remove ${escape(state.draft[draftIndex].name)} station</button>` : ''}
-        ${route ? `<button type="button" role="menuitem" data-context-action="route">Inspect ${escape(route.name)} line</button>` : ''}
-        ${nearby && distance <= 200 ? `<button type="button" role="menuitem" data-context-action="inspect-stop">Inspect traffic at ${escape(nearby.name)}</button>` : ''}
-        ${canAddStop ? `<button type="button" role="menuitem" data-context-action="add-stop">Add ${escape(nearby.name)} to selected line</button>` : ''}
-        <button type="button" role="menuitem" data-context-action="metro" class="map-context-primary">${state.tool === 'metro' ? 'Add station here' : 'Start metro line here'}</button>
-        <button type="button" role="menuitem" data-context-action="ruler">${rulerPoints.length ? rulerActive ? 'Add ruler point here' : 'Extend ruler from here' : 'Start ruler here'}</button>
-        ${rulerActive ? '<button type="button" role="menuitem" data-context-action="ruler-finish">Finish ruler</button>' : ''}
-        ${rulerPoints.length ? '<button type="button" role="menuitem" data-context-action="ruler-clear">Clear ruler</button>' : ''}
-        <div class="map-context-action-row" role="presentation"><button type="button" role="menuitem" data-context-action="zoom">Center & zoom</button><button type="button" role="menuitem" data-context-action="copy">Copy coordinates</button></div>
-        <button type="button" role="menuitem" data-context-action="data" class="map-context-secondary">Data sources & method ↗</button>
+        ${draftIndex >= 0 ? `<button type="button" role="menuitem" data-context-action="move-stop">${escape(t('context.move', { name: state.draft[draftIndex].name }))}</button><button type="button" role="menuitem" data-context-action="remove-stop" class="map-context-danger">${escape(t('context.remove', { name: state.draft[draftIndex].name }))}</button>` : ''}
+        ${route ? `<button type="button" role="menuitem" data-context-action="route">${escape(t('context.inspectLine', { name: route.name }))}</button>` : ''}
+        ${nearby && distance <= 200 ? `<button type="button" role="menuitem" data-context-action="inspect-stop">${escape(t('context.inspectStop', { name: nearby.name }))}</button>` : ''}
+        ${canAddStop ? `<button type="button" role="menuitem" data-context-action="add-stop">${escape(t('context.add', { name: nearby.name }))}</button>` : ''}
+        <button type="button" role="menuitem" data-context-action="metro" class="map-context-primary">${escape(state.tool === 'metro' ? t('context.addStation') : t('context.startMetro'))}</button>
+        <button type="button" role="menuitem" data-context-action="ruler">${escape(rulerPoints.length ? rulerActive ? t('context.addRuler') : t('context.extendRuler') : t('context.startRuler'))}</button>
+        ${rulerActive ? `<button type="button" role="menuitem" data-context-action="ruler-finish">${escape(t('context.finishRuler'))}</button>` : ''}
+        ${rulerPoints.length ? `<button type="button" role="menuitem" data-context-action="ruler-clear">${escape(t('context.clearRuler'))}</button>` : ''}
+        <div class="map-context-action-row" role="presentation"><button type="button" role="menuitem" data-context-action="zoom">${escape(t('context.center'))}</button><button type="button" role="menuitem" data-context-action="copy">${escape(t('context.copy'))}</button></div>
+        <button type="button" role="menuitem" data-context-action="data" class="map-context-secondary">${escape(t('context.data'))}</button>
       </div>`;
     menu.hidden = false;
     menu.style.visibility = 'hidden';
@@ -749,9 +762,9 @@ async function startApp() {
         field.select();
         copied = document.execCommand('copy'); field.remove();
       }
-      if (!copied) throw new Error('Clipboard unavailable');
-      toast('Coordinates copied (latitude, longitude).');
-    } catch (_) { toast('Could not copy coordinates from this browser.'); }
+      if (!copied) throw new Error(t('toast.copyFail'));
+      toast(t('toast.copied'));
+    } catch (_) { toast(t('toast.copyFail')); }
   }
   function nearestStop(pos, maxKm) {
     let best = null, distance = maxKm;
@@ -760,7 +773,7 @@ async function startApp() {
   }
   function routeGeometry(ids, ring = false) { return [ids.concat(ring && ids.length >= 3 ? ids[0] : []).map(stop).filter(Boolean).map(s => s.pos)]; }
   function setRouteStops(route, ids) {
-    if (ids.length < 2) return toast('A line needs at least two stops.');
+    if (ids.length < 2) return toast(t('toast.needTwo'));
     remember();
     const ring = route.ring === true && ids.length >= 3;
     const geometry = routeGeometry(ids, ring);
@@ -799,7 +812,7 @@ async function startApp() {
     introSync();
   }
   function createMetro() {
-    if (state.draft.length < (state.draftRing ? 3 : 2)) return toast(state.draftRing ? 'A ring needs at least three stops.' : 'Place at least two stops on the map.');
+    if (state.draft.length < (state.draftRing ? 3 : 2)) return toast(state.draftRing ? t('toast.ring') : t('toast.two'));
     remember();
     const stamp = Date.now().toString(36), id = `${state.draftMode}:${stamp}`;
     const stops = state.draft.map((s, i) => ({ id: `${id}:${i}`, name: s.name, pos: s.pos, city: 'Player', schematic: !!s.schematic, coordinateNote: s.coordinateNote || '' }));
@@ -807,7 +820,7 @@ async function startApp() {
     const template = state.draftTemplate;
     state.customRoutes.push({
       id, source: 'player', name: state.draftName.trim() || nextDraftName(state.draftMode),
-      longName: template?.title || `Player-created ${modeLabel(state.draftMode).toLowerCase()} line`,
+      longName: localize(template?.title) || t('draft.playerLine', { mode: modeLabel(state.draftMode).toLowerCase() }),
       mode: state.draftMode, color: state.draftColor, stopIds: stops.map(s => s.id),
       geometry: routeGeometry(stops.map(s => s.id), state.draftRing), ring: state.draftRing, headway: Number(state.draftHeadway) || 8,
       active: true, edited: true, templateId: template?.id || null,
@@ -816,41 +829,41 @@ async function startApp() {
       templateStatus: template?.status || null, schematic: !!template
     });
     state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.tool = 'inspect'; state.selected = id; state.draftName = nextDraftName(state.draftMode); state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = colors.metro; setMobileView('line');
-    map.getCanvas().style.cursor = ''; changed(); toast('Line opened. The model is recalculating.');
+    map.getCanvas().style.cursor = ''; changed(); toast(t('toast.opened'));
   }
   function renderTemplates() {
     const host = $('template-list');
     if (!host) return;
     $('template-section').hidden = !templates.length;
     $('template-count').textContent = `(${templates.length})`;
-    host.innerHTML = templates.map(t => {
-      const mode = ['metro', 'tram', 'rail'].includes(t.mode) ? t.mode : 'rail';
-      const count = Array.isArray(t.stations) ? t.stations.length : 0;
-      return `<article class="template-card"><div class="section-title"><span class="chip mode-${escape(mode)}">${escape(modeLabel(mode))}</span><span class="value">${escape(t.status || 'Historical concept')}</span></div><h3>${escape(t.title || 'Regional rail concept')}</h3><p>${escape(t.description || 'Documented regional transport proposal.')}</p><p class="fine-print">${count} named anchors · ${escape(t.confidence || 'Conceptual alignment')}</p><div class="toolbar"><a href="${escape(safeUrl(t.sourceUrl || '#'))}" target="_blank" rel="noopener">Read source ↗</a><button class="primary" data-template-id="${escape(t.id)}">Load editable draft</button></div></article>`;
-    }).join('') || '<p class="empty-state">No sourced line concepts are available.</p>';
+    host.innerHTML = templates.map(item => {
+      const mode = ['metro', 'tram', 'rail'].includes(item.mode) ? item.mode : 'rail';
+      const count = Array.isArray(item.stations) ? item.stations.length : 0;
+      return `<article class="template-card"><div class="section-title"><span class="chip mode-${escape(mode)}">${escape(modeLabel(mode))}</span><span class="value">${escape(localize(item.status) || t('draft.status'))}</span></div><h3>${escape(localize(item.title) || t('draft.fallback'))}</h3><p>${escape(localize(item.description) || t('draft.fallbackBody'))}</p><p class="fine-print">${escape(t('network.anchors', { count }))} · ${escape(localize(item.confidence) || t('draft.confidence'))}</p><div class="toolbar"><a href="${escape(safeUrl(item.sourceUrl || '#'))}" target="_blank" rel="noopener">${escape(t('network.readSource'))}</a><button class="primary" data-template-id="${escape(item.id)}">${escape(t('network.loadDraft'))}</button></div></article>`;
+    }).join('') || `<p class="empty-state">${escape(t('network.noConcepts'))}</p>`;
   }
   function loadTemplate(templateId) {
     const template = templates.find(t => t.id === templateId);
-    if (!template || !Array.isArray(template.stations) || template.stations.length < 2) return toast('This line concept is incomplete.');
+    if (!template || !Array.isArray(template.stations) || template.stations.length < 2) return toast(t('toast.incomplete'));
     const mode = ['tram', 'rail', 'metro'].includes(template.mode) ? template.mode : 'rail';
     state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = template;
     state.draftMode = mode; state.draftColor = suggestLineColor(template.stations.map(s => [Number(s.lon), Number(s.lat)]));
     state.draftName = template.defaultName || nextDraftName(mode);
     state.draftHeadway = Number(template.headway) || 8;
     state.draft = template.stations.map((station, i) => ({
-      name: station.name || `Station ${i + 1}`,
+      name: station.name || t('draft.stationNumber', { n: i + 1 }),
       pos: [Number(station.lon), Number(station.lat)],
       schematic: station.schematic !== false,
-      coordinateNote: station.coordinateNote || ''
+      coordinateNote: localize(station.coordinateNote) || ''
     })).filter(s => Number.isFinite(s.pos[0]) && Number.isFinite(s.pos[1]));
-    if (state.draft.length < 2) { state.draft = []; state.draftTemplate = null; state.tool = 'inspect'; return toast('This line concept has no usable station coordinates.'); }
+    if (state.draft.length < 2) { state.draft = []; state.draftTemplate = null; state.tool = 'inspect'; return toast(t('toast.noCoords')); }
     setMobileView('line');
     if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false);
     setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair';
     renderList(); renderInspector(); renderDraft();
     const bounds = new maplibregl.LngLatBounds(); state.draft.forEach(s => bounds.extend(s.pos));
     map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 13.5, duration: 650 });
-    toast(`${modeLabel(mode)} concept loaded as an editable draft.`);
+    toast(t('toast.loaded', { mode: modeLabel(mode) }));
   }
   const ctx = {};
   function renderList() { renderRouteList(ctx); }
@@ -860,7 +873,7 @@ async function startApp() {
     renderLineInspector(ctx);
   }
   function renderStats() { renderResults(ctx); }
-  function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderSelection(); renderDraft(); toast('Click the map to place metro stations.'); }
+  function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderSelection(); renderDraft(); toast(t('toast.place')); }
 
   let statsWorker = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
   function scheduleStats() {
@@ -906,23 +919,25 @@ async function startApp() {
 
   function openData() {
     const source = population?.source || {};
-    const populationCredit = maskCells.length ? `<p><b>Population</b> — <a href="${escape(safeUrl(source.url || window.TRANSIT_URLS.population))}" target="_blank" rel="noopener">${escape(source.shortName || 'Resident grid')}</a>; ${escape(source.attribution || '')} The mask uses published 1 km polygons, including zero-resident cells. Cells are selected by their centers inside ${region.municipalities.length} municipal boundaries, so totals are not exact full-municipality counts.</p>` : '';
+    const populationCredit = maskCells.length ? `<p><b>${escape(t('data.populationLabel'))}</b> — <a href="${escape(safeUrl(source.url || window.TRANSIT_URLS.population))}" target="_blank" rel="noopener">${escape(source.shortName || t('data.gridFallback'))}</a>; ${escape(source.attribution || '')} ${escape(t('data.population', { count: region.municipalities.length }))}</p>` : '';
     const feedNotes = network.sources.map(item => `<p><b>${escape(item.name)}</b> — <a href="${escape(safeUrl(item.url || '#'))}" target="_blank" rel="noopener">${escape(item.license || 'Source')}</a>${item.date ? `, ${escape(item.date)}` : ''}.${item.note ? ` ${escape(item.note)}` : ''}</p>`).join('');
     const tripRate = region.demand?.tripRate || 0.6;
-    const demandExplanation = state.stats?.demandPopulation ? `The selected grid contains ${format(state.stats.demandPopulation)} residents. We group them into ${sim.zones.length} municipality-based anchors. Origins use residential population; destinations use a separate estimate based on local density and proximity to the municipal population center. This is not an observed work, school or retail zoning dataset. At ${tripRate} assumed cross-zone trip opportunities per resident per day, this produces ${format(state.stats.demandTrips)} modeled opportunities.` : 'Population data is unavailable.';
-    modal(`<span class="chip">DATA & MODEL</span><h2>Real network. Estimated outcomes.</h2><p>The playable area covers ${region.municipalities.length} municipalities in ${escape(region.name.en)}. Outlying endpoints provide transit context.</p>
-      <div class="modal-sources">${feedNotes}${populationCredit}<p><b>Rapid transit access</b> — straight-line distance from each cell center to the nearest active tram, rail or player metro stop.</p><p><b>Past concepts</b> — schematic drafts shipped with this region.</p><p><b>Basemap</b> — <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, delivered by <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p></div>
-      <h3>How the figures work</h3><p>${demandExplanation} Paths use stop sequences, walking transfers, the selected period's interval and scheduled run times. A route's average initial wait is half its interval. The Peak, Midday and Saturday control describes that period; the clock minute does not change the model. Passenger count is a simulated transit share, never an observed count.</p><p>Satisfaction is an index based on modeled journey time, which already includes waiting and transfer penalties. The local results are grouped by trip origin. Cost is route-kilometers × departures × assumed cost per kilometer (bus zł12, tram zł20, rail zł38, metro zł55). Peak uses Wednesday trip counts. Another period uses that period's stored trip count, or Wednesday trips scaled by the peak interval divided by the period interval when no count was stored. These values support relative experiments, not official forecasts.</p><p>Each GTFS route uses one representative shape per direction; branches and short turns are simplified. Ordinary player lines run both ways; rings run in the drawn order and include their closing segment. New lines, PKM patterns and edited stops use direct segments. Play moves illustrative vehicles, not real-time positions.</p><p><a href="${escape(window.TRANSIT_URLS.network)}" target="_blank">Open network</a> · <a href="${escape(window.TRANSIT_URLS.population)}" target="_blank">Open population grid</a></p>`);
+    const demandExplanation = state.stats?.demandPopulation ? t('data.demand', { residents: format(state.stats.demandPopulation), zones: sim.zones.length, rate: tripRate, trips: format(state.stats.demandTrips) }) : t('data.noPopulation');
+    const regionName = localize(region.name) || region.name?.en || '';
+    modal(`<span class="chip">${escape(t('data.chip'))}</span><h2>${escape(t('data.title'))}</h2><p>${escape(t('data.area', { count: region.municipalities.length, name: regionName }))}</p>
+      <div class="modal-sources">${feedNotes}${populationCredit}<p>${escape(t('data.access'))}</p><p>${escape(t('data.concepts'))}</p><p><b>${escape(t('data.basemap'))}</b> — <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p></div>
+      <h3>${escape(t('data.how'))}</h3><p>${escape(demandExplanation)} ${escape(t('data.method'))}</p><p>${escape(t('data.satisfaction'))}</p><p>${escape(t('data.shapes'))}</p><p><a href="${escape(window.TRANSIT_URLS.network)}" target="_blank">${escape(t('data.openNetwork'))}</a> · <a href="${escape(window.TRANSIT_URLS.population)}" target="_blank">${escape(t('data.openPopulation'))}</a></p>`);
   }
   function openGuide() {
-    modal(`<span class="chip">QUICK GUIDE</span><h2>Test an idea for ${escape(region.shortName.en)}.</h2><ol><li><b>Explore</b> the real bus, tram and rail patterns. Click a line in the list or on the map.</li><li><b>Reduce map clutter</b> with the mode buttons in the bottom-bar Layers menu. They hide routes, stops and vehicles without changing the network.</li><li><b>Tinker</b> with its service interval, active state and stops. The stats compare your scenario with the baseline.</li><li><b>Build</b> a metro from map clicks, optionally close it into a one-direction ring, or load a documented past concept as an editable draft.</li><li><b>Plan</b> with resident density or tram-and-rail access layers. The left rail collapses the single desktop panel, which expands on hover or click. Network, Inspect and Results share it; mobile tabs open the same views.</li><li><b>Play</b> the illustrative vehicle animation. Use Undo, Reset, Export and Import to manage scenarios.</li></ol><p>Map: drag to pan, scroll or pinch to zoom. Right-click for location data, line actions and the ruler. While drawing, right-click a station to move or remove it, or middle-drag it. Click a stop to see its service intervals. Press F for fullscreen; Display settings can hide its button. Right-drag on empty map space to rotate.</p>`);
+    const regionName = localize(region.shortName) || region.shortName?.en || '';
+    modal(`<span class="chip">${escape(t('guide.chip'))}</span><h2>${escape(t('guide.title', { name: regionName }))}</h2><ol>${t('guide.body')}</ol><p>${escape(t('guide.map'))}</p>`);
   }
   function exportScenario() {
     const payload = { app: 'Transit Lab', region: region.id, networkVersion: network.version, savedAt: new Date().toISOString(), ...JSON.parse(snapshot()), daypart: state.daypart };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = `transit-lab-${region.id}-${new Date().toISOString().slice(0, 10)}.json`; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000); toast('Scenario exported.');
+    setTimeout(() => URL.revokeObjectURL(url), 1000); toast(t('toast.exported'));
   }
 
   $('route-list').onclick = e => { const card = e.target.closest('[data-route]'); if (card) card.dataset.route === state.selected ? clearSelection() : selectRoute(card.dataset.route); };
@@ -942,8 +957,8 @@ async function startApp() {
     if (action === 'route' && route) { finishRuler(); selectRoute(route.id); }
     else if (action === 'inspect-stop' && nearby) { finishRuler(); inspectStop(nearby.id); }
     else if (action === 'add-stop' && nearby) { finishRuler(); addExistingStop(nearby.pos); }
-    else if (action === 'move-stop' && draftIndex >= 0) { finishRuler(); state.movingDraftIndex = draftIndex; renderInspector(); toast(`Click the new position for ${state.draft[draftIndex].name}. Middle-drag also works.`); }
-    else if (action === 'remove-stop' && draftIndex >= 0) { finishRuler(); const [removed] = state.draft.splice(draftIndex, 1); state.movingDraftIndex = null; renderInspector(); renderDraft(); toast(`${removed.name} removed from draft.`); }
+    else if (action === 'move-stop' && draftIndex >= 0) { finishRuler(); state.movingDraftIndex = draftIndex; renderInspector(); toast(t('toast.move', { name: state.draft[draftIndex].name })); }
+    else if (action === 'remove-stop' && draftIndex >= 0) { finishRuler(); const [removed] = state.draft.splice(draftIndex, 1); state.movingDraftIndex = null; renderInspector(); renderDraft(); toast(t('toast.removed', { name: removed.name })); }
     else if (action === 'metro') { finishRuler(); if (state.tool !== 'metro') enterMetroTool(); addDraftStation(pos); }
     else if (action === 'ruler') { if (rulerPoints.length) addRulerPoint(pos); else startRuler(pos); }
     else if (action === 'ruler-finish') finishRuler();
@@ -1000,29 +1015,29 @@ async function startApp() {
   $('zoom-in-button').onclick = () => map.zoomIn({ duration: 250 });
   $('compass-button').onclick = () => map.easeTo({ bearing: 0, duration: 350 });
   $('tilt-button').onclick = () => map.easeTo({ pitch: map.getPitch() > 10 ? 0 : 45, duration: 350 });
-  $('undo-button').onclick = () => { if (!state.history.length) return; const daypart = state.daypart; Object.assign(state, normalizeScenario(parseScenario(state.history.pop()))); state.daypart = daypart; rebuildRouteCache(); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast('Last edit undone.'); };
+  $('undo-button').onclick = () => { if (!state.history.length) return; const daypart = state.daypart; Object.assign(state, normalizeScenario(parseScenario(state.history.pop()))); state.daypart = daypart; rebuildRouteCache(); persist(); renderList(); renderInspector(); renderMap(); scheduleStats(); toast(t('toast.undone')); };
   $('export-button').onclick = exportScenario;
   $('import-button').onclick = () => $('import-file').click();
   $('import-file').onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
     try {
-      if (file.size > MAX_SCENARIO_BYTES) throw new Error('Scenario exceeds the file size limit (5 MB).');
+      if (file.size > MAX_SCENARIO_BYTES) throw new Error(t('scenario.size'));
       const data = parseScenario(await file.text());
-      if (data.region && data.region !== region.id) throw new Error(`This scenario is for ${data.region}, not ${region.name.en}.`);
-      if (![network.version, ...LEGACY_VERSIONS].includes(data.networkVersion)) throw new Error('This scenario does not match a supported network snapshot.');
+      if (data.region && data.region !== region.id) throw new Error(t('scenario.region', { other: data.region, name: localize(region.name) || region.name?.en || region.id }));
+      if (![network.version, ...LEGACY_VERSIONS].includes(data.networkVersion)) throw new Error(t('scenario.version'));
       const warnings = [];
       const scenario = normalizeScenario(data, warning => warnings.push(warning));
-      remember(); Object.assign(state, scenario); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; changed(); toast(warnings.length ? warnings.join(' ') : data.networkVersion !== network.version ? 'Earlier scenario imported into the metropolitan snapshot.' : 'Scenario imported.');
-    } catch (err) { toast(err.message || 'Could not read this scenario.'); }
+      remember(); Object.assign(state, scenario); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; changed(); toast(warnings.length ? warnings.join(' ') : data.networkVersion !== network.version ? t('toast.importedOld') : t('toast.imported'));
+    } catch (err) { toast(err.message || t('toast.importFail')); }
     e.target.value = '';
   };
   $('reset-button').onclick = async () => {
-    if (!await confirmDialog('Restore the published network snapshot and remove your local edits? You can undo immediately afterward.')) return;
-    remember(); Object.assign(state, empty()); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; state.draft = []; state.draftRing = false; changed(); toast('Source snapshot restored.');
+    if (!await confirmDialog(t('confirm.reset'))) return;
+    remember(); Object.assign(state, empty()); state.selected = null; state.selectedStop = null; state.tool = 'inspect'; state.draft = []; state.draftRing = false; changed(); toast(t('toast.restored'));
   };
   $('guide-button').onclick = openGuide; $('about-button').onclick = openData; $('model-link').onclick = openData;
   $('mobile-menu-button').onclick = () => {
-    modal('<span class="chip">SCENARIO</span><h2>Manage this sandbox</h2><div class="mobile-menu-actions"><button data-mobile-action="guide-button">Guide</button><button data-mobile-action="fullscreen-button">Toggle fullscreen</button><button data-mobile-action="settings-button">Display settings</button><button data-mobile-action="export-button">Export scenario</button><button data-mobile-action="import-button">Import scenario</button><button data-mobile-action="reset-button">Reset snapshot</button><button data-mobile-action="about-button">Data & model</button></div>');
+    modal(`<span class="chip">${escape(t('menu.chip'))}</span><h2>${escape(t('menu.title'))}</h2><div class="mobile-menu-actions"><button data-mobile-action="guide-button">${escape(t('menu.guide'))}</button><button data-mobile-action="fullscreen-button">${escape(t('menu.fullscreen'))}</button><button data-mobile-action="settings-button">${escape(t('menu.settings'))}</button><button data-mobile-action="export-button">${escape(t('menu.export'))}</button><button data-mobile-action="import-button">${escape(t('menu.import'))}</button><button data-mobile-action="reset-button">${escape(t('menu.reset'))}</button><button data-mobile-action="about-button">${escape(t('menu.about'))}</button></div>`);
   };
   $('modal-content').onclick = e => { const button = e.target.closest('[data-mobile-action]'); if (button) { const id = button.dataset.mobileAction; closeModal(); if (id === 'settings-button') openSettings(); else if (id === 'fullscreen-button') toggleFullscreen(); else $(id).click(); } };
   $('modal-close').onclick = closeModal; $('modal').onclick = e => { if (e.target === $('modal')) closeModal(); };
@@ -1032,10 +1047,10 @@ async function startApp() {
       if (!$('map-context-menu').hidden) { closeContextMenu(); map.getCanvas().focus(); return; }
       if (!$('modal').hidden) { closeModal(); return; }
       if (rulerActive) { finishRuler(); return; }
-      if (state.movingDraftIndex !== null) { state.movingDraftIndex = null; renderInspector(); toast('Station move cancelled.'); return; }
+      if (state.movingDraftIndex !== null) { state.movingDraftIndex = null; renderInspector(); toast(t('toast.moveCancel')); return; }
       if (state.selected || state.selectedStop) { clearSelection(); return; }
       if (state.tool !== 'inspect') {
-        if (state.draft.length && !await confirmDialog('Discard this in-progress line?')) return;
+        if (state.draft.length && !await confirmDialog(t('confirm.discard'))) return;
         state.tool = 'inspect'; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = null; state.draftMode = 'metro'; state.draftColor = colors.metro;
         map.getCanvas().style.cursor = '';
         renderInspector(); renderDraft();
@@ -1154,7 +1169,7 @@ async function startApp() {
     scheduleStats();
   }
   renderDaypart();
-  $('sim-clock').title = 'Click to reset simulation time and clear vehicles';
+  $('sim-clock').title = t('bottom.clockTitle');
   $('sim-clock').onclick = () => {
     state.minutes = daypartClock[state.daypart] || 450;
     state.elapsedMinutes = 0;
@@ -1168,7 +1183,7 @@ async function startApp() {
 
   $('play-button').onclick = () => {
     state.playing = !state.playing;
-    $('play-button').textContent = state.playing ? 'Ⅱ Pause' : '▶ Play';
+    $('play-button').textContent = state.playing ? `Ⅱ ${t('bottom.pause')}` : `▶ ${t('bottom.play')}`;
     $('play-button').setAttribute('aria-pressed', String(state.playing));
     if (state.playing) {
       vehiclesActive = true;
@@ -1285,32 +1300,7 @@ async function startApp() {
     if (intro.active && intro.index === 0) return;
     if (!$('layers-menu').contains(e.target)) $('layers-menu').open = false;
   });
-  const introText = {
-    en: {
-      kicker: step => `Step ${step} of 5`,
-      skip: 'Skip', close: 'Close intro', skipStep: 'Skip this step', showAgain: 'Show the intro again',
-      steps: [
-        ['Hide the buses', 'Use the bus button in Layers. The tram lines stay on the map.'],
-        ['Select tram T6', 'Choose T6 in the line list.'],
-        ['Run T6 every 6 minutes', 'Set its service interval to 6 minutes.'],
-        ['Draw a metro', 'Place three stations and open the line. Skipping this step is fine.'],
-        ['Read the result', 'Open Results and look at the change in passenger trips.']
-      ]
-    },
-    pl: {
-      kicker: step => `Krok ${step} z 5`,
-      skip: 'Pomiń', close: 'Zamknij wprowadzenie', skipStep: 'Pomiń ten krok', showAgain: 'Pokaż wprowadzenie ponownie',
-      steps: [
-        ['Ukryj autobusy', 'Użyj przycisku autobusów w Warstwach. Tramwaje zostają na mapie.'],
-        ['Wybierz tramwaj T6', 'Wskaż T6 na liście linii.'],
-        ['T6 co 6 minut', 'Ustaw odstęp tej linii na 6 minut.'],
-        ['Narysuj metro', 'Postaw trzy stacje i otwórz linię. Ten krok można pominąć.'],
-        ['Zobacz wynik', 'Otwórz Wyniki i spójrz na zmianę liczby podróży.']
-      ]
-    }
-  };
   const intro = { index: 0, active: false, started: false };
-  const introLanguage = () => (navigator.language || '').toLowerCase().startsWith('pl') ? 'pl' : 'en';
   function introSettings() { try { return JSON.parse(localStorage.getItem('transit-lab:settings') || '{}'); } catch (_) { return {}; } }
   function writeIntroSettings(patch) {
     try { localStorage.setItem('transit-lab:settings', JSON.stringify({ ...introSettings(), ...patch })); } catch (_) {}
@@ -1347,7 +1337,6 @@ async function startApp() {
     if (overlaps) coach.style.top = `${Math.max(8, rect.top - height - 10)}px`;
   }
   function showIntro() {
-    const copy = introText[introLanguage()];
     let coach = $('intro-coach');
     if (!coach) {
       coach = document.createElement('div');
@@ -1361,13 +1350,12 @@ async function startApp() {
       $('intro-close').onclick = finishIntro;
       $('intro-skip-step').onclick = () => { intro.index = 4; showIntro(); };
     }
-    const [title, body] = copy.steps[intro.index];
-    $('intro-kicker').textContent = copy.kicker(intro.index + 1);
-    $('intro-title').textContent = title;
-    $('intro-body').textContent = body;
-    $('intro-skip').textContent = copy.skip;
-    $('intro-close').textContent = copy.close;
-    $('intro-skip-step').textContent = copy.skipStep;
+    $('intro-kicker').textContent = t('intro.kicker', { step: intro.index + 1 });
+    $('intro-title').textContent = t(`intro.steps.${intro.index}.title`);
+    $('intro-body').textContent = t(`intro.steps.${intro.index}.body`);
+    $('intro-skip').textContent = t('intro.skip');
+    $('intro-close').textContent = t('intro.close');
+    $('intro-skip-step').textContent = t('intro.skipStep');
     $('intro-skip-step').hidden = intro.index !== 3;
     document.body.dataset.introStep = String(intro.index);
     if (intro.index === 0) $('layers-menu').open = true;
@@ -1375,7 +1363,7 @@ async function startApp() {
     if (intro.index === 2) setPanel('inspector', true);
     document.querySelectorAll('.intro-target').forEach(element => element.classList.remove('intro-target'));
     const target = introTarget();
-    if (!target && intro.index === 1) { finishIntro(); toast('Could not find tram T6.'); return; }
+    if (!target && intro.index === 1) { finishIntro(); toast(t('intro.missing')); return; }
     if (target) {
       target.classList.add('intro-target');
       placeIntro(target);
@@ -1403,6 +1391,18 @@ async function startApp() {
     showIntro();
   }
   window.addEventListener('resize', () => { if (intro.active) placeIntro(introTarget()); });
+  onLocale(() => {
+    applyDom();
+    paintRegion(region);
+    renderFullscreen();
+    renderPopulationControl();
+    renderTemplates();
+    renderList();
+    renderInspector();
+    if (state.stats) renderStats();
+    if (intro.active) showIntro();
+    $('play-button').textContent = state.playing ? `Ⅱ ${t('bottom.pause')}` : `▶ ${t('bottom.play')}`;
+  });
   scheduleStats();
 }
 

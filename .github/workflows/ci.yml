@@ -42,6 +42,9 @@ jobs:
             node tests/scenario-audit.cjs
           fi
 
+      - name: Run Polish plural audit
+        run: node tests/i18n-plural.mjs
+
       - name: Install Playwright and browser dependencies
         run: |
           npm install --no-save @playwright/test
