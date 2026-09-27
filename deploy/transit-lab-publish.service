@@ -1,0 +1,9 @@
+[Unit]
+Description=Publish Transit Lab static site
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/srv/transit-lab
+ExecStart=/srv/transit-lab/deploy/publish.sh

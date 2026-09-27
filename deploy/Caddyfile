@@ -1,0 +1,31 @@
+:8080 {
+	bind 127.0.0.1 ::1
+	root * /srv/transit-lab/public
+
+	encode zstd gzip
+
+	file_server {
+		precompressed br gzip
+	}
+
+	# Security headers
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; worker-src 'self' blob:; connect-src 'self' https://tiles.openfreemap.org; img-src 'self' data: blob: https://tiles.openfreemap.org; style-src 'self' 'unsafe-inline'; font-src 'self' https://tiles.openfreemap.org; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Cache-Control policies
+	@versioned query v=*
+	@vendor path /vendor/*
+	@data {
+		path /data/*
+		not query v=*
+	}
+	@html path / /index.html
+
+	header @versioned Cache-Control "public, max-age=31536000, immutable"
+	header @vendor Cache-Control "public, max-age=31536000, immutable"
+	header @data Cache-Control "public, max-age=86400"
+	header @html Cache-Control "no-cache"
+}
