@@ -161,8 +161,10 @@
     } catch (_) { toast('Fullscreen is unavailable in this browser.'); }
   }
   function openSettings() {
-    modal(`<span class="chip">DISPLAY SETTINGS</span><h2>Display</h2><div class="form-stack"><button id="settings-fullscreen" type="button">${document.fullscreenElement || document.webkitFullscreenElement ? 'Exit' : 'Enter'} fullscreen</button><label class="toggle-row"><input id="settings-fullscreen-visible" type="checkbox" ${showFullscreenButton ? 'checked' : ''}> Show fullscreen button</label><p class="fine-print">Press F to toggle fullscreen while the map or a panel has focus. Escape exits fullscreen.</p></div>`);
+    const introLabel = introText[introLanguage()].showAgain;
+    modal(`<span class="chip">DISPLAY SETTINGS</span><h2>Display</h2><div class="form-stack"><button id="settings-fullscreen" type="button">${document.fullscreenElement || document.webkitFullscreenElement ? 'Exit' : 'Enter'} fullscreen</button><label class="toggle-row"><input id="settings-fullscreen-visible" type="checkbox" ${showFullscreenButton ? 'checked' : ''}> Show fullscreen button</label><button id="settings-intro" type="button">${escape(introLabel)}</button><p class="fine-print">Press F to toggle fullscreen while the map or a panel has focus. Escape exits fullscreen.</p></div>`);
     $('settings-fullscreen').onclick = async () => { closeModal(); await toggleFullscreen(); };
+    $('settings-intro').onclick = () => { writeIntroSettings({ introDone: false }); intro.index = 0; intro.active = false; intro.started = false; closeModal(); maybeStartIntro(); };
     $('settings-fullscreen-visible').onchange = e => {
       showFullscreenButton = e.target.checked;
       try { localStorage.setItem(DISPLAY_STORAGE, JSON.stringify({ showFullscreenButton })); } catch (_) {}
@@ -762,7 +764,7 @@
     } else state.overrides[route.id] = { ...(state.overrides[route.id] || {}), [field]: value };
     changed();
   }
-  function changed() { rebuildRouteCache(); persist(); renderList(); renderInspector(); renderNetwork(); renderSelection(); scheduleStats(); }
+  function changed() { rebuildRouteCache(); persist(); renderList(); renderInspector(); renderNetwork(); renderSelection(); scheduleStats(); introSync(); }
   function clearSelection() {
     state.selected = null; state.selectedStop = null;
     setPanelTab('network'); renderList(); renderInspector(); renderSelection();
@@ -780,6 +782,7 @@
       const bounds = new maplibregl.LngLatBounds(); points.forEach(p => bounds.extend(p));
       map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 13.7, duration: 650 });
     }
+    introSync();
   }
   function createMetro() {
     if (state.draft.length < (state.draftRing ? 3 : 2)) return toast(state.draftRing ? 'A ring needs at least three stops.' : 'Place at least two stops on the map.');
@@ -997,6 +1000,7 @@
     const local = s.cityStats?.[state.resultCity], original = b?.cityStats?.[state.resultCity];
     $('local-results').innerHTML = `<label>Local impact<select id="result-city">${cities.map(city => `<option value="${escape(city)}" ${city === state.resultCity ? 'selected' : ''}>${escape(city)}</option>`).join('')}</select></label><div class="local-results-grid"><span><b>${format(local?.passengers || 0)}</b> trips <small>${original ? delta(local.passengers, original.passengers) : ''}</small></span><span><b>${local?.passengers ? local.satisfaction.toFixed(2) : '—'}</b> satisfaction <small>${original && local?.passengers ? delta(local.satisfaction, original.satisfaction, ' pts', 2) : ''}</small></span><span><b>${local?.coverage.toFixed(2) || '0.00'}%</b> demand served <small>${original ? delta(local.coverage, original.coverage, ' pts', 2) : ''}</small></span></div>`;
     $('result-city').onchange = e => { state.resultCity = e.target.value; renderStats(); };
+    maybeStartIntro();
   }
 
   function openData() {
@@ -1023,7 +1027,7 @@
   $('network-rail').onclick = () => setPanel('network', !state.networkOpen);
   document.querySelector('.panel-tabs').onclick = e => {
     const tab = e.target.closest('[data-panel-tab]')?.dataset.panelTab;
-    if (tab) setPanelTab(tab);
+    if (tab) { setPanelTab(tab); introSync(); }
   };
   $('planning-layer').onchange = e => { closeContextMenu(); state.activeLayer = e.target.value; renderPopulationControl(); };
   $('map-context-menu').oncontextmenu = e => e.preventDefault();
@@ -1064,6 +1068,7 @@
     const mode = button.dataset.mapMode;
     state.mapModes[mode] = !state.mapModes[mode];
     applyMapModeVisibility();
+    introSync();
   };
   $('heatmap-toggle').onclick = () => { state.populationVisible = !state.populationVisible; renderPopulationControl(); };
   document.querySelector('.mobile-tabs').onclick = e => { const button = e.target.closest('[data-view]'); if (button) setMobileView(button.dataset.view); };
@@ -1373,7 +1378,126 @@
   }
   renderTemplates(); renderList(); renderInspector();
   document.addEventListener('pointerdown', e => {
+    if (intro.active && intro.index === 0) return;
     if (!$('layers-menu').contains(e.target)) $('layers-menu').open = false;
   });
+  const introText = {
+    en: {
+      kicker: step => `Step ${step} of 5`,
+      skip: 'Skip', close: 'Close intro', skipStep: 'Skip this step', showAgain: 'Show the intro again',
+      steps: [
+        ['Hide the buses', 'Use the bus button in Layers. The tram lines stay on the map.'],
+        ['Select tram T6', 'Choose T6 in the line list.'],
+        ['Run T6 every 6 minutes', 'Set its service interval to 6 minutes.'],
+        ['Draw a metro', 'Place three stations and open the line. Skipping this step is fine.'],
+        ['Read the result', 'Open Results and look at the change in passenger trips.']
+      ]
+    },
+    pl: {
+      kicker: step => `Krok ${step} z 5`,
+      skip: 'Pomiń', close: 'Zamknij wprowadzenie', skipStep: 'Pomiń ten krok', showAgain: 'Pokaż wprowadzenie ponownie',
+      steps: [
+        ['Ukryj autobusy', 'Użyj przycisku autobusów w Warstwach. Tramwaje zostają na mapie.'],
+        ['Wybierz tramwaj T6', 'Wskaż T6 na liście linii.'],
+        ['T6 co 6 minut', 'Ustaw odstęp tej linii na 6 minut.'],
+        ['Narysuj metro', 'Postaw trzy stacje i otwórz linię. Ten krok można pominąć.'],
+        ['Zobacz wynik', 'Otwórz Wyniki i spójrz na zmianę liczby podróży.']
+      ]
+    }
+  };
+  const intro = { index: 0, active: false, started: false };
+  const introLanguage = () => (navigator.language || '').toLowerCase().startsWith('pl') ? 'pl' : 'en';
+  function introSettings() { try { return JSON.parse(localStorage.getItem('transit-lab:settings') || '{}'); } catch (_) { return {}; } }
+  function writeIntroSettings(patch) {
+    try { localStorage.setItem('transit-lab:settings', JSON.stringify({ ...introSettings(), ...patch })); } catch (_) {}
+  }
+  function introTarget() {
+    if (intro.index === 0) return document.querySelector('[data-map-mode="bus"]');
+    if (intro.index === 1) {
+      const route = allRoutes().find(item => item.name === 'T6');
+      return route ? document.querySelector(`[data-route="${CSS.escape(route.id)}"]`) : null;
+    }
+    if (intro.index === 2) return $('route-headway');
+    if (intro.index === 3) return $('metro-tool');
+    return document.querySelector('[data-panel-tab="results"]');
+  }
+  function introDoneAction() {
+    if (intro.index === 0) return state.mapModes.bus === false;
+    if (intro.index === 1) return routeById(state.selected)?.name === 'T6';
+    if (intro.index === 2) { const route = routeById(state.selected); return route?.name === 'T6' && Number(route.headway) === 6; }
+    if (intro.index === 3) return state.customRoutes.some(route => route.source === 'player');
+    return state.panelTab === 'results';
+  }
+  function placeIntro(target) {
+    const coach = $('intro-coach');
+    if (!coach || !target) return;
+    target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const rect = target.getBoundingClientRect();
+    const width = coach.offsetWidth, height = coach.offsetHeight;
+    let top = rect.bottom + 10, left = Math.min(Math.max(8, rect.left), innerWidth - width - 8);
+    if (top + height > innerHeight - 8) top = Math.max(8, rect.top - height - 10);
+    coach.style.top = `${top}px`;
+    coach.style.left = `${left}px`;
+    const box = coach.getBoundingClientRect();
+    const overlaps = !(box.right < rect.left || box.left > rect.right || box.bottom < rect.top || box.top > rect.bottom);
+    if (overlaps) coach.style.top = `${Math.max(8, rect.top - height - 10)}px`;
+  }
+  function showIntro() {
+    const copy = introText[introLanguage()];
+    let coach = $('intro-coach');
+    if (!coach) {
+      coach = document.createElement('div');
+      coach.id = 'intro-coach';
+      coach.className = 'intro-coach';
+      coach.setAttribute('role', 'dialog');
+      coach.setAttribute('aria-labelledby', 'intro-title');
+      coach.innerHTML = `<p id="intro-kicker"></p><h2 id="intro-title"></h2><p id="intro-body"></p><div class="intro-actions"><button type="button" id="intro-skip-step"></button><button type="button" id="intro-skip"></button><button type="button" id="intro-close"></button></div>`;
+      document.body.appendChild(coach);
+      $('intro-skip').onclick = finishIntro;
+      $('intro-close').onclick = finishIntro;
+      $('intro-skip-step').onclick = () => { intro.index = 4; showIntro(); };
+    }
+    const [title, body] = copy.steps[intro.index];
+    $('intro-kicker').textContent = copy.kicker(intro.index + 1);
+    $('intro-title').textContent = title;
+    $('intro-body').textContent = body;
+    $('intro-skip').textContent = copy.skip;
+    $('intro-close').textContent = copy.close;
+    $('intro-skip-step').textContent = copy.skipStep;
+    $('intro-skip-step').hidden = intro.index !== 3;
+    document.body.dataset.introStep = String(intro.index);
+    if (intro.index === 0) $('layers-menu').open = true;
+    if (intro.index === 1 && state.panelTab !== 'network') setPanelTab('network');
+    if (intro.index === 2) setPanel('inspector', true);
+    document.querySelectorAll('.intro-target').forEach(element => element.classList.remove('intro-target'));
+    const target = introTarget();
+    if (!target && intro.index === 1) { finishIntro(); toast('Could not find tram T6.'); return; }
+    if (target) {
+      target.classList.add('intro-target');
+      placeIntro(target);
+    }
+  }
+  function finishIntro() {
+    intro.active = false;
+    writeIntroSettings({ introDone: true });
+    delete document.body.dataset.introStep;
+    $('intro-coach')?.remove();
+    document.querySelectorAll('.intro-target').forEach(element => element.classList.remove('intro-target'));
+  }
+  function introSync() {
+    if (!intro.active) return;
+    while (intro.index <= 4 && introDoneAction()) intro.index += 1;
+    if (intro.index > 4) { finishIntro(); return; }
+    showIntro();
+  }
+  function maybeStartIntro() {
+    if (intro.started || intro.active || introSettings().introDone) return;
+    if (!Number.isFinite(state.stats?.passengers)) return;
+    intro.started = true;
+    intro.active = true;
+    intro.index = 0;
+    showIntro();
+  }
+  window.addEventListener('resize', () => { if (intro.active) placeIntro(introTarget()); });
   scheduleStats();
 })();

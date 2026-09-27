@@ -24,6 +24,10 @@ test('smoke test: load, select tram T6, enter metro tool, place 2 stations', asy
   // Wait for loading overlay to be removed
   await page.locator('#loading').waitFor({ state: 'detached', timeout: 45000 });
 
+  const introSkip = page.locator('#intro-skip');
+  if (await introSkip.count()) await introSkip.click();
+  await page.locator('#layers-menu').evaluate(menu => { menu.open = false; });
+
   // 3. Select tram T6
   await page.fill('#route-search', 'T6');
   const t6Card = page.locator('#route-list button.route-card', { hasText: 'T6' }).first();
