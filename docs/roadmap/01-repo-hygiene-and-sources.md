@@ -34,23 +34,23 @@ In scope:
    - Data sources and attribution (keep all current attributions verbatim).
    - A link to `docs/model-limits.md` and a link to `docs/roadmap/`.
    - Keep it under about 120 lines.
-8. **Add `ATTRIBUTION.md`** listing every data source, its license or terms, and the required attribution text. Do **not** add a `LICENSE` file; the owner hasn't chosen one.
+8. **Add `ATTRIBUTION.md`** listing every data source, its license or terms, and the required attribution text. The code license is already AGPL-3.0 in `LICENSE`. Do not replace or remove it.
 
 Out of scope: moving files into `src/` (brief 11), region folders (brief 10) and any behavior change.
 
-## License gate: STOP AND ASK before any public push
+## License note
 
-Processed `network.json` / `network.js` is a derivative of three feeds:
+The owner published this tree on 27 September 2026. Do not make the repository private and do not remove the remote. Processed `network.json` / `network.js` is a derivative of three feeds:
 
 - GZM ZTM is CC BY. Attribution is required and publishing the derived network is fine.
 - Koleje Śląskie's download page does not state a reusable license. Transitland's catalog entry is not the operator's permission.
 - PKM Jaworzno's timetable pages do not state a reusable license.
 
-Deleting the ZIPs from the latest commit does not clear the derived network. In `ATTRIBUTION.md`, mark Koleje Śląskie and PKM as **not cleared for a public repository**. Do not push a public branch, and do not put those patterns in a public deploy, until the owner writes a decision in `ATTRIBUTION.md`. The rest of this brief can land on a private branch first.
+In `ATTRIBUTION.md`, mark Koleje Śląskie and PKM as **published by the owner's decision, terms still unclear**. Do not delete those patterns from the public repo unless the owner asks.
 
 ## Git history: STOP AND ASK
 
-The raw ZIPs are in both existing commits (`69f8850`, `6ca84dd`), so deleting them now still publishes them in history. Before pushing to GitHub, the owner must choose one of these:
+The raw ZIPs are already in the public history (`69f8850`, `6ca84dd`), so deleting them from a later commit still leaves them reachable. Do not rewrite that history unless the owner chooses one of these:
 
 - **(a) Recommended.** Create a fresh orphan branch with the cleaned tree as a single "Initial public release" commit, and push only that branch.
 - **(b)** Rewrite history with `git filter-repo --path data/sources --invert-paths`.
@@ -71,4 +71,4 @@ Do not rewrite or force-push anything without explicit approval.
 ## Stop and ask if
 
 - A source URL no longer serves the pinned file and no archived copy exists.
-- You're unsure whether a source's terms allow redistributing processed output. List which one and why. Koleje Śląskie and PKM are already in this category: stop for the public push even if everything else in the brief is done.
+- You're unsure whether a source's terms allow redistributing processed output. List which one and why. Koleje Śląskie and PKM stay marked unclear in `ATTRIBUTION.md`; that is not a reason to unpublish the repo.

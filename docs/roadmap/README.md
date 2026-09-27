@@ -17,8 +17,8 @@ Each brief is self-contained: hand one file to an implementing model together wi
 | Hosting | Static files only, on a small Proxmox LXC behind a Cloudflare Tunnel. No backend; scenarios are shared through compressed URL links. |
 | Recalculation budget | About 1–2 s on a laptop after an edit, with a visible progress state. Phones use one worker. A few seconds there is acceptable. The 4 GB server only serves files and is not the budget. |
 | Raw source data | Not committed. Download scripts with pinned SHA-256; only processed output is committed. |
-| Code license | **Undecided. Do not add a LICENSE file** until the owner decides (AGPL-3.0 is under consideration). |
-| Publishing | Phase 0 can go public only after the owner answers the license gate in brief 01. GZM's feed is CC BY. The derived Koleje Śląskie and PKM network is not cleared for a public repo until then. |
+| Code license | **AGPL-3.0.** The text is `LICENSE` in the repo root. It covers the code. Datasets keep their publishers' terms. Do not replace the license. |
+| Publishing | The current tree is public at `https://github.com/zipos/transit-lab`. GZM's feed is CC BY. Koleje Śląskie and PKM terms are still unclear; brief 01 records that in `ATTRIBUTION.md` and does not treat it as a reason to take the repo private. |
 
 ## Order and dependencies
 

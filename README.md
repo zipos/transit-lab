@@ -59,3 +59,9 @@ No dissatisfaction mask is shown because a geographically resolved observed meas
 Potential future layers with finer published geography include the [GUS 250 m 2021 population grid](https://portal.geo.stat.gov.pl/aktualnosci/nowe-dane-o-ludnosci-krajowej-z-nsp-2021-w-siatce-kwadratow-250mx250m/), [GUS 1 km buildings and dwellings grid](https://portal.geo.stat.gov.pl/aktualnosci/dane-o-budynkach-i-mieszkaniach-w-siatce-kilometrowej-nsp-2021/), and land-use polygons from [GUGiK BDOT10k](https://www.geoportal.gov.pl/pl/dane/baza-danych-obiektow-topograficznych-bdot10k/) or [Copernicus Urban Atlas 2021](https://land.copernicus.eu/en/products/urban-atlas/urban-atlas-2021). These require separate import, coverage and reuse review before being presented as game data.
 
 Edited routes use direct lines between stops; they do not follow roads, existing track or engineered tunnel alignments. The source line templates likewise show schematic direct segments where a proposal does not publish a precise geometry. Play animates illustrative vehicles along selected route shapes, using rough travel-time pacing and frequency-based spacing. It is not a timetable or live vehicle feed.
+
+## License
+
+The code in this repository is licensed under the [GNU Affero General Public License v3.0](LICENSE). Copyright (C) 2026 zipos.
+
+Transit feeds, population grids, and boundary data keep the terms of their publishers, listed above. The AGPL applies to the code, not to those datasets.
