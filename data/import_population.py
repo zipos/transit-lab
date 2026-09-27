@@ -8,7 +8,6 @@ formula for ETRS89 / Poland CS92 (GRS80 ellipsoid).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import struct
@@ -16,25 +15,19 @@ import zipfile
 from itertools import zip_longest
 from pathlib import Path
 from fetch_boundaries import NAMES
+from fetch_sources import load_sources, verify_source
 
 
 HERE = Path(__file__).resolve().parent
 SOURCES = HERE / "sources"
-GRID_ZIP = SOURCES / "GRID_NSP2021_RES.zip"
-BOUNDARIES = SOURCES / "city-boundaries-prg.geojson"
+CATALOG = {source["id"]: source for source in load_sources()}
+GRID_ZIP = SOURCES / CATALOG["gus-resident-grid"]["filename"]
+BOUNDARIES = SOURCES / CATALOG["prg-boundaries"]["filename"]
 JSON_OUT = HERE / "population-density.json"
 JS_OUT = HERE / "population-density.js"
 
-GRID_SHA256 = "815deb0fb369df11de0ff150dd14ce87fd875acf3d542da8d2db1dafc0791680"
-BOUNDARIES_SHA256 = "4756efeccf96543e5325c6bbd323d4cedbe9e49cc977f343f18376842d5b8eb9"
-
-
-def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for block in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(block)
-    return h.hexdigest()
+GRID_SHA256 = CATALOG["gus-resident-grid"]["sha256"]
+BOUNDARIES_SHA256 = CATALOG["prg-boundaries"]["sha256"]
 
 
 def read_dbf_records(raw: bytes):
@@ -232,10 +225,8 @@ def project_ring_to_wgs84(ring):
 
 
 def build_data():
-    if sha256(GRID_ZIP) != GRID_SHA256:
-        raise ValueError("The pinned GUS resident-grid ZIP has changed")
-    if sha256(BOUNDARIES) != BOUNDARIES_SHA256:
-        raise ValueError("The pinned PRG boundary snapshot has changed")
+    verify_source(CATALOG["gus-resident-grid"])
+    verify_source(CATALOG["prg-boundaries"])
 
     with zipfile.ZipFile(GRID_ZIP) as archive:
         shapes = archive.read("GRID_NSP2021_RES.shp")
@@ -378,7 +369,7 @@ def build_data():
 def main():
     data, source_rows = build_data()
     payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-    JSON_OUT.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    JSON_OUT.write_text(payload + "\n", encoding="utf-8")
     JS_OUT.write_text("window.GZM_POPULATION=" + payload + ";\n", encoding="utf-8")
     print(
         json.dumps(

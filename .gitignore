@@ -1,3 +1,7 @@
 .DS_Store
 __pycache__/
 *.pyc
+
+# Raw inputs are fetched and hash-verified, not tracked.
+data/sources/*
+!data/sources/.gitkeep
