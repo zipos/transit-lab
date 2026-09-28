@@ -41,6 +41,12 @@ def main():
     templates = ROOT / "regions" / region_id / "templates.json"
     network = json.loads((output / "network.json").read_text(encoding="utf-8"))
     population = json.loads(population_dest.read_text(encoding="utf-8"))
+    from lib.zones import attach_access, build_zones, write_zones
+    demand = region.get("demand") or {}
+    zones = build_zones(population["cells"], int(demand.get("zoneTarget") or 450), int(demand.get("minZonePop") or 1500))
+    attach_access(zones, network["stops"], network["routes"])
+    write_zones(population_dest, zones)
+    population["zones"] = zones
     lock = {
         "region": region_id,
         "networkVersion": network["version"],

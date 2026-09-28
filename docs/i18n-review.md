@@ -55,6 +55,14 @@ Each schematic station note is a Polish rendering of the English "approximate pr
 - Opublikowana sieć
 - W tej przeglądarce brakuje miejsca na kolejny plan.
 
+## Demand zones (brief 21)
+
+- dojście z komórki, 4,5 km/h i współczynnik 1,25
+- 20 min+
+- {{minutes}} min pieszo do {{name}}
+- Strefa popytu
+- {{count}} mieszkańców w tej strefie
+
 ## Simulation progress (brief 20)
 
 - Przeliczanie

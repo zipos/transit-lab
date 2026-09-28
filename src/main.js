@@ -1,6 +1,6 @@
 import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-engine';
-import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-engine';
-import { createModel, modelVersion } from './sim/model.js?v=2026-09-28-engine';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-zones';
+import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-zones';
 import { minify, expand, bytesToBase64Url, base64UrlToBytes, compressJson, decompressJson, shareUrl } from './share.js?v=2026-09-28-share2';
 import { createSlot, activateSlot, duplicateSlot, renameSlot, deleteSlot, slotLimit } from './slots.js?v=2026-09-28-share2';
 import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js?v=2026-09-28-share2';
@@ -437,6 +437,13 @@ async function startApp() {
     }
   }
   const featureCollection = features => ({ type: 'FeatureCollection', features });
+  const zoneByCellId = new Map();
+  for (const zone of population?.zones || []) {
+    for (const cell of zone.cells || []) {
+      const source = population.cells?.[cell.index];
+      if (source?.id) zoneByCellId.set(source.id, zone);
+    }
+  }
   const maskFeatures = featureCollection(maskCells.map(c => ({
     type: 'Feature',
     properties: { id: c.id, density: +c.density, residents: +c.population || 0, city: c.city },
@@ -456,7 +463,8 @@ async function startApp() {
       let distance = Infinity;
       const center = [+cell.lon, +cell.lat];
       for (const station of rapidStops) distance = Math.min(distance, sim.km(center, station.pos));
-      return { ...feature, properties: { ...feature.properties, accessM: Number.isFinite(distance) ? Math.round(distance * 1000) : 99999 } };
+      const minutes = Number.isFinite(distance) ? walkMinutes(distance) : 999;
+      return { ...feature, properties: { ...feature.properties, accessMin: +minutes.toFixed(1) } };
     }));
     accessCache = { key, rapidStops, features };
     return accessCache;
@@ -488,7 +496,7 @@ async function startApp() {
       ? ['#245c59', '#4c9183', '#d6b476', '#ca816b', '#a95266']
       : ['#bce7d9', '#83cdb7', '#e4d796', '#efac78', '#d86f77'];
     map.addLayer({ id: 'access-grid-fill', type: 'fill', source: 'population-grid', layout: { visibility: accessVisible }, paint: {
-      'fill-color': ['interpolate', ['linear'], ['get', 'accessM'], 0, accessColors[0], 400, accessColors[1], 900, accessColors[2], 1800, accessColors[3], 3000, accessColors[4]],
+      'fill-color': ['interpolate', ['linear'], ['get', 'accessMin'], 0, accessColors[0], 5, accessColors[1], 10, accessColors[2], 15, accessColors[3], 20, accessColors[4]],
       'fill-opacity': ['interpolate', ['linear'], ['zoom'], 9, .52, 11, .56, 13, .72, 18, .64],
       'fill-antialias': true,
     } }, beneathRoads);
@@ -758,12 +766,15 @@ async function startApp() {
     const canAddStop = nearby && selected && !selected.stopIds.includes(nearby.id) && distance <= 550;
     contextLocation = { pos, nearby, route, draftIndex };
     const menu = $('map-context-menu');
-    const walkMinutes = nearby ? Math.max(1, Math.round(distance / 75)) : 0;
+    const walkEstimate = nearby ? Math.max(1, Math.round(walkMinutes(distance / 1000))) : 0;
+    const rapidMinutes = rapidStop ? Math.max(1, Math.round(walkMinutes(rapidKm))) : 0;
+    const demandZone = cell ? zoneByCellId.get(cell.id) : null;
     menu.innerHTML = `<div class="map-context-heading" role="presentation"><span class="map-context-eyebrow">${escape(t('context.eyebrow'))}</span><strong>${escape(cityName)}</strong><small>${pos[1].toFixed(5)}° N · ${pos[0].toFixed(5)}° E</small></div>
       <div class="map-context-facts" role="presentation">
         <div><span>${escape(t('context.grid', { year: population?.source?.year || '2021' }))}</span><b>${cell ? escape(t('context.density', { density: format(+cell.density) })) : escape(t('context.noCell'))}</b><small>${cell ? escape(t('context.residents', { count: format(+cell.population || 0) })) : escape(t('context.outside'))}</small></div>
-        <div><span>${escape(t('context.access'))}</span><b>${rapidStop ? `${format(Math.round(rapidKm * 1000))} m` : escape(t('context.noService'))}</b><small>${rapidStop ? escape(t('context.straight', { name: rapidStop.name })) : escape(t('context.enable'))}</small></div>
-        <div><span>${escape(t('context.nearest'))}</span><b>${nearby ? escape(nearby.name) : escape(t('context.none'))}</b><small>${nearby ? escape(t('context.walk', { distance: format(distance), minutes: walkMinutes })) : escape(t('context.zoom'))}</small></div>
+        ${isDebug && demandZone ? `<div><span>${escape(t('context.zone'))}</span><b>${escape(demandZone.id)}</b><small>${escape(t('context.zoneResidents', { count: format(demandZone.residents) }))}</small></div>` : ''}
+        <div><span>${escape(t('context.access'))}</span><b>${rapidStop ? `${format(rapidMinutes)} min` : escape(t('context.noService'))}</b><small>${rapidStop ? escape(t('context.straight', { name: rapidStop.name, minutes: format(rapidMinutes) })) : escape(t('context.enable'))}</small></div>
+        <div><span>${escape(t('context.nearest'))}</span><b>${nearby ? escape(nearby.name) : escape(t('context.none'))}</b><small>${nearby ? escape(t('context.walk', { distance: format(distance), minutes: format(walkEstimate) })) : escape(t('context.zoom'))}</small></div>
       </div>
       <div class="map-context-actions" role="presentation">
         ${draftIndex >= 0 ? `<button type="button" role="menuitem" data-context-action="move-stop">${escape(t('context.move', { name: state.draft[draftIndex].name }))}</button><button type="button" role="menuitem" data-context-action="remove-stop" class="map-context-danger">${escape(t('context.remove', { name: state.draft[draftIndex].name }))}</button>` : ''}
@@ -1020,7 +1031,7 @@ async function startApp() {
     if (statsPool?.length === count) return statsPool;
     statsPool?.forEach(worker => worker.terminate());
     statsPool = Array.from({ length: count }, () => {
-      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-engine`, import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-zones`, import.meta.url), { type: 'module' });
       worker.onmessage = ({ data }) => onPoolMessage(data);
       worker.onerror = () => {
         statsPool?.forEach(item => item.terminate());

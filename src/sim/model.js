@@ -1,7 +1,11 @@
 /* Deterministic accessibility model. All outputs are estimates, never observed ridership. */
 import { modes, cruiseSpeed, capacity as seats, costPerKm as rate } from '../modes.js';
 
-export const modelVersion = 2;
+export const modelVersion = 3;
+
+export function walkMinutes(distanceKm) {
+  return distanceKm * 1.25 / 4.5 * 60;
+}
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const rad = Math.PI / 180;
@@ -13,45 +17,69 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   }
   function createModel(network, population, options = {}) {
   const zones = [];
+  const zoneIds = [];
   const zoneResidents = [];
   const zoneAttraction = [];
   const zoneCities = [];
-  // Each municipality has at least one demand anchor; larger ones have two.
+  const preparedZones = Array.isArray(population?.zones) && population.zones.length ? population.zones : null;
+  let preparedAccess = null;
   // Homes use the published residents. Daytime destinations are a transparent
   // centrality/density proxy, not observed workplaces, schools or shops.
-  const populationCells = population?.cells || [];
-  const cellsByCity = new Map();
-  for (const cell of populationCells) {
-    if (!(+cell.population > 0)) continue;
-    if (!cellsByCity.has(cell.city)) cellsByCity.set(cell.city, []);
-    cellsByCity.get(cell.city).push(cell);
-  }
-  for (const [city, cells] of cellsByCity) {
-    const total = cells.reduce((sum, c) => sum + +c.population, 0);
-    const count = total >= 80000 && cells.length > 1 ? 2 : 1;
-    const center = [cells.reduce((s, c) => s + c.lon * c.population, 0) / total, cells.reduce((s, c) => s + c.lat * c.population, 0) / total];
-    const seeds = [center];
-    if (count > 1) {
-      const far = cells.reduce((best, c) => c.population * km([c.lon, c.lat], center) > best.population * km([best.lon, best.lat], center) ? c : best);
-      seeds.push([far.lon, far.lat]);
+  if (preparedZones) {
+    let massLon = 0, massLat = 0, mass = 0;
+    for (const zone of preparedZones) {
+      massLon += zone.centroid[0] * zone.residents;
+      massLat += zone.centroid[1] * zone.residents;
+      mass += zone.residents;
     }
-    const groups = Array.from({ length: count }, () => []);
-    for (const c of cells) {
-      const p = [c.lon, c.lat];
-      const idx = count === 1 || km(p, seeds[0]) <= km(p, seeds[1]) ? 0 : 1;
-      groups[idx].push(c);
+    const regionCenter = mass > 0 ? [massLon / mass, massLat / mass] : [19.1, 50.2];
+    preparedAccess = [];
+    for (const zone of preparedZones) {
+      const centrality = 1 / (1 + km(zone.centroid, regionCenter) / 7);
+      zones.push([zone.municipality, zone.centroid[0], zone.centroid[1]]);
+      zoneIds.push(zone.id);
+      zoneResidents.push(zone.residents);
+      zoneAttraction.push(Math.sqrt(zone.residents) * (0.6 + Math.log1p(zone.density) / 8) * (0.7 + centrality));
+      zoneCities.push(zone.municipality);
+      preparedAccess.push(zone.access.map(([index, minutes]) => [index, minutes]));
     }
-    for (const [index, group] of groups.entries()) {
-      if (!group.length) continue;
-      const residents = group.reduce((s, c) => s + +c.population, 0);
-      const lon = group.reduce((s, c) => s + c.lon * c.population, 0) / residents;
-      const lat = group.reduce((s, c) => s + c.lat * c.population, 0) / residents;
-      const density = group.reduce((s, c) => s + c.population * c.population, 0) / residents;
-      const centrality = 1 / (1 + km([lon, lat], center) / 7);
-      zones.push([count === 1 ? city : `${city} ${index + 1}`, lon, lat]);
-      zoneResidents.push(residents);
-      zoneAttraction.push(Math.sqrt(residents) * (0.6 + Math.log1p(density) / 8) * (0.7 + centrality));
-      zoneCities.push(city);
+  } else {
+    const populationCells = population?.cells || [];
+    const cellsByCity = new Map();
+    for (const cell of populationCells) {
+      if (!(+cell.population > 0)) continue;
+      if (!cellsByCity.has(cell.city)) cellsByCity.set(cell.city, []);
+      cellsByCity.get(cell.city).push(cell);
+    }
+    for (const [city, cells] of cellsByCity) {
+      const total = cells.reduce((sum, c) => sum + +c.population, 0);
+      const count = total >= 80000 && cells.length > 1 ? 2 : 1;
+      const center = [cells.reduce((s, c) => s + c.lon * c.population, 0) / total, cells.reduce((s, c) => s + c.lat * c.population, 0) / total];
+      const seeds = [center];
+      if (count > 1) {
+        const far = cells.reduce((best, c) => c.population * km([c.lon, c.lat], center) > best.population * km([best.lon, best.lat], center) ? c : best);
+        seeds.push([far.lon, far.lat]);
+      }
+      const groups = Array.from({ length: count }, () => []);
+      for (const c of cells) {
+        const p = [c.lon, c.lat];
+        const idx = count === 1 || km(p, seeds[0]) <= km(p, seeds[1]) ? 0 : 1;
+        groups[idx].push(c);
+      }
+      for (const [index, group] of groups.entries()) {
+        if (!group.length) continue;
+        const residents = group.reduce((s, c) => s + +c.population, 0);
+        const lon = group.reduce((s, c) => s + c.lon * c.population, 0) / residents;
+        const lat = group.reduce((s, c) => s + c.lat * c.population, 0) / residents;
+        const density = group.reduce((s, c) => s + c.population * c.population, 0) / residents;
+        const centrality = 1 / (1 + km([lon, lat], center) / 7);
+        const name = count === 1 ? city : `${city} ${index + 1}`;
+        zones.push([name, lon, lat]);
+        zoneIds.push(name);
+        zoneResidents.push(residents);
+        zoneAttraction.push(Math.sqrt(residents) * (0.6 + Math.log1p(density) / 8) * (0.7 + centrality));
+        zoneCities.push(city);
+      }
     }
   }
   const residentTotal = zoneResidents.reduce((a, b) => a + b, 0);
@@ -154,10 +182,66 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       const nearby = [];
       for (let index = 0; index < list.length; index++) {
         const distance = km(point, list[index].pos);
-        if (distance < 1.4) nearby.push([index + shift, distance]);
+        if (distance < 1.4) nearby.push([index + shift, distance / 4.5 * 60]);
       }
       nearby.sort((a, b) => a[1] - b[1]);
       return nearby.slice(0, 8);
+    });
+  }
+  function zoneWalk(zone, pos, limit) {
+    let weighted = 0, weight = 0;
+    for (const cell of zone.cells) {
+      const minutes = km([cell.lon, cell.lat], pos) * 1.25 / 4.5 * 60;
+      if (minutes > limit) continue;
+      const population = +cell.population;
+      weighted += population * minutes;
+      weight += population;
+    }
+    return weight > 0 ? weighted / weight : Infinity;
+  }
+  let maxPreparedIndex = 0;
+  if (preparedAccess) {
+    for (const list of preparedAccess) for (const [index] of list) if (index > maxPreparedIndex) maxPreparedIndex = index;
+  }
+  function limitFor(routes, stopId, fallback = 15) {
+    let limit = fallback;
+    for (const route of routes) {
+      if (route.mode !== 'rail' && route.mode !== 'metro') continue;
+      if (route.stopIds.includes(stopId)) return 20;
+    }
+    return limit;
+  }
+  function accessFor(networkStops, customStops, routes) {
+    const aligned = preparedAccess && networkStops.length > maxPreparedIndex;
+    if (!preparedAccess) {
+      if (!publishedAccess) publishedAccess = nearestStops(networkStops, 0);
+      const customAccess = customStops.length ? nearestStops(customStops, networkStops.length) : null;
+      return customAccess ? publishedAccess.map((list, index) => list.concat(customAccess[index])) : publishedAccess;
+    }
+    if (!aligned) {
+      const present = networkStops.concat(customStops);
+      return preparedZones.map(zone => {
+        const entries = [];
+        for (let index = 0; index < present.length; index++) {
+          const stop = present[index];
+          const limit = limitFor(routes, stop.id);
+          const minutes = zoneWalk(zone, stop.pos, limit);
+          if (minutes <= limit) entries.push([index, +minutes.toFixed(2)]);
+        }
+        return entries;
+      });
+    }
+    if (!customStops.length) return preparedAccess;
+    return preparedAccess.map((list, index) => {
+      const extra = [];
+      const zone = preparedZones[index];
+      for (let stopIndex = 0; stopIndex < customStops.length; stopIndex++) {
+        const stop = customStops[stopIndex];
+        const limit = limitFor(routes, stop.id);
+        const minutes = zoneWalk(zone, stop.pos, limit);
+        if (minutes <= limit) extra.push([networkStops.length + stopIndex, +minutes.toFixed(2)]);
+      }
+      return extra.length ? list.concat(extra) : list;
     });
   }
   function blankLocal() {
@@ -170,6 +254,12 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       coverage: +(100 * value.riders / Math.max(1, value.demand)).toFixed(2),
       satisfaction: +(value.satisfaction / Math.max(1, value.riders)).toFixed(2),
     }]));
+    const zoneStats = zoneIds.map((id, index) => ({
+      id,
+      from: Math.round(estimatedDemand * (sums.zoneFrom?.[index] || 0) / Math.max(1, sums.demandTotal)),
+      to: Math.round(estimatedDemand * (sums.zoneTo?.[index] || 0) / Math.max(1, sums.demandTotal)),
+      journey: sums.zoneFrom?.[index] > 0 ? +(sums.zoneJourney[index] / sums.zoneFrom[index]).toFixed(2) : 0,
+    }));
     return {
       demandPopulation: residentTotal,
       demandTrips: estimatedDemand,
@@ -182,6 +272,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       cost: Math.round(serviceKm),
       coverage: +(sums.riders / Math.max(1, sums.demandTotal) * 100).toFixed(2),
       cityStats,
+      zoneStats,
     };
   }
   function calculate(network, customRoutes, customStops, overrides, daypart = 'peak', hooks = {}) {
@@ -292,7 +383,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     for (let i = 0; i < nodeCount; i++) offset[i + 1] = offset[i] + degree[i];
     const cursor = new Uint32Array(offset);
     const target = new Int32Array(edgeCount);
-    const edgeCost = new Float32Array(edgeCount);
+    const edgeCost = new Float64Array(edgeCount);
     const edgeWait = new Float32Array(edgeCount);
     const edgeBoard = new Uint8Array(edgeCount);
     const edgeKind = new Uint8Array(edgeCount);
@@ -305,13 +396,10 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       edgeKind[at] = raw[i + 5];
     }
     const built = performance.now();
-    if (!publishedAccess) publishedAccess = nearestStops(network.stops, 0);
-    const customAccess = customStops.length ? nearestStops(customStops, network.stops.length) : null;
-    const zoneStops = customAccess
-      ? publishedAccess.map((list, index) => list.concat(customAccess[index]))
-      : publishedAccess;
+    const zoneStops = accessFor(network.stops, customStops, routes);
     const sums = {
       demandTotal: 0, riders: 0, satisfaction: 0, waitTotal: 0, travelTotal: 0, transferTotal: 0, reachedWeight: 0,
+      zoneFrom: Array(zones.length).fill(0), zoneTo: Array(zones.length).fill(0), zoneJourney: Array(zones.length).fill(0),
       local: blankLocal(),
     };
     const targets = [];
@@ -349,8 +437,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       let remaining = targets.length;
       const originAccess = zoneStops[origin];
       for (let n = 0; n < originAccess.length; n++) {
-        const access = originAccess[n][1] / 4.5 * 60;
+        const access = originAccess[n][1];
         const node = originAccess[n][0];
+        if (node >= stopCount) continue;
         if (access < dist[node]) {
           dist[node] = access;
           heapSize = heapPush(heapKeys, heapVals, heapSize, access, node);
@@ -382,8 +471,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         let best = Infinity, bestNode = -1;
         const access = zoneStops[destination];
         for (let n = 0; n < access.length; n++) {
+          if (access[n][0] >= stopCount) continue;
           const node = stopCount + access[n][0];
-          const time = dist[node] + access[n][1] / 4.5 * 60;
+          const time = dist[node] + access[n][1];
           if (time < best) { best = time; bestNode = node; }
         }
         if (!Number.isFinite(best) || boards[bestNode] === 0) continue;
@@ -399,6 +489,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         sums.waitTotal += pathWait[bestNode] * served;
         sums.travelTotal += best * served;
         sums.transferTotal += Math.max(0, boards[bestNode] - 1) * served;
+        sums.zoneFrom[origin] += served;
+        sums.zoneTo[destination] += served;
+        sums.zoneJourney[origin] += best * served;
       }
     }
     if (hooks.onProgress && !cancelled) hooks.onProgress(1);
@@ -425,6 +518,18 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         total.local[city].demand += part.local[city].demand;
         total.local[city].riders += part.local[city].riders;
         total.local[city].satisfaction += part.local[city].satisfaction;
+      }
+      if (part.zoneFrom) {
+        if (!total.zoneFrom) {
+          total.zoneFrom = Array(part.zoneFrom.length).fill(0);
+          total.zoneTo = Array(part.zoneTo.length).fill(0);
+          total.zoneJourney = Array(part.zoneJourney.length).fill(0);
+        }
+        for (let index = 0; index < part.zoneFrom.length; index++) {
+          total.zoneFrom[index] += part.zoneFrom[index];
+          total.zoneTo[index] += part.zoneTo[index];
+          total.zoneJourney[index] += part.zoneJourney[index];
+        }
       }
     }
     return project(total, partials[0].serviceKm, partials[0].seatTrips);

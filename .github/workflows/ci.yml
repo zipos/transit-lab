@@ -57,6 +57,9 @@ jobs:
       - name: Run simulation benchmark
         run: node tests/bench-sim.mjs
 
+      - name: Run demand-zone audit
+        run: node tests/zones-audit.mjs
+
       - name: Install Playwright and browser dependencies
         run: |
           npm install --no-save @playwright/test
