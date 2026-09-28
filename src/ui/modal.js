@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { t } from '../i18n/index.js';
+import { t } from '../i18n/index.js?v=2026-09-28-share2';
 
 let modalReturnFocus = null;
 let modalInertState = [];

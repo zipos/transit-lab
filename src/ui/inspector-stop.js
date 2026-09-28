@@ -1,5 +1,5 @@
 import { html, raw, directionGlyph } from '../html.js';
-import { t, plural } from '../i18n/index.js';
+import { t, plural } from '../i18n/index.js?v=2026-09-28-share2';
 import { intervalLabel } from './list.js';
 
 export function renderStopInspector(ctx) {

@@ -1,15 +1,17 @@
-import { loadRegion, reportRegionError, paintRegion } from './region.js';
-import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js';
-import { createModel } from './sim/model.js';
-import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js';
-import { colors, cruiseSpeed } from './modes.js';
-import { groupLines } from './lines.js';
-import { renderRouteList } from './ui/list.js';
-import { renderDraftInspector } from './ui/draft.js';
-import { renderStopInspector } from './ui/inspector-stop.js';
-import { renderLineInspector } from './ui/inspector-line.js';
-import { renderResults } from './ui/results.js';
-import { createModal } from './ui/modal.js';
+import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-share2';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-share2';
+import { createModel, modelVersion } from './sim/model.js?v=2026-09-28-share2';
+import { minify, expand, bytesToBase64Url, base64UrlToBytes, compressJson, decompressJson, shareUrl } from './share.js?v=2026-09-28-share2';
+import { createSlot, activateSlot, duplicateSlot, renameSlot, deleteSlot, slotLimit } from './slots.js?v=2026-09-28-share2';
+import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js?v=2026-09-28-share2';
+import { colors, cruiseSpeed } from './modes.js?v=2026-09-28-share2';
+import { groupLines } from './lines.js?v=2026-09-28-share2';
+import { renderRouteList } from './ui/list.js?v=2026-09-28-share2';
+import { renderDraftInspector } from './ui/draft.js?v=2026-09-28-share2';
+import { renderStopInspector } from './ui/inspector-stop.js?v=2026-09-28-share2';
+import { renderLineInspector } from './ui/inspector-line.js?v=2026-09-28-share2';
+import { renderResults } from './ui/results.js?v=2026-09-28-share2';
+import { createModal } from './ui/modal.js?v=2026-09-28-share2';
 
 window.TransitScenario = { normalize, safeUrl: scenarioSafeUrl, safeColor };
 applyDom();
@@ -62,7 +64,7 @@ async function startApp() {
   }
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
-  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
+  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], sharePreview: null, compareSlotId: null, compareName: '', challenge: null, mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
   let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0;
   let vehiclesActive = false, lastVehicleCount = 0;
 
@@ -173,7 +175,34 @@ async function startApp() {
   }
   function snapshot() { return JSON.stringify({ overrides: state.overrides, customRoutes: state.customRoutes, customStops: state.customStops }); }
   function remember() { state.history.push(snapshot()); if (state.history.length > 30) state.history.shift(); }
-  function persist() { try { localStorage.setItem(STORAGE, JSON.stringify({ ...JSON.parse(snapshot()), daypart: state.daypart })); } catch (_) { toast(t('toast.storage')); } }
+  const slotsKey = `transit-lab:${region.id}:slots`;
+  function readBook() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(slotsKey) || '');
+      if (parsed && Array.isArray(parsed.slots)) return parsed;
+    } catch (_) {}
+    return { active: null, slots: [] };
+  }
+  function writeBook(book) {
+    try { localStorage.setItem(slotsKey, JSON.stringify(book)); return true; }
+    catch (_) { toast(t('toast.quota')); return false; }
+  }
+  function currentScenario() { return { ...JSON.parse(snapshot()), daypart: state.daypart, region: region.id, networkVersion: network.version, challenge: state.challenge || null }; }
+  function summaryFrom(stats) {
+    return stats ? { passengers: stats.passengers, cost: stats.cost, modelVersion, networkVersion: network.version, stats } : null;
+  }
+  function persist() {
+    if (state.sharePreview) return;
+    try {
+      const body = currentScenario();
+      localStorage.setItem(STORAGE, JSON.stringify(body));
+      const book = readBook();
+      let slot = book.slots.find(item => item.id === book.active);
+      if (!slot) slot = createSlot(book, body, summaryFrom(state.stats), t('slots.autosave'));
+      else { slot.scenario = body; slot.updated = Date.now(); slot.networkVersion = network.version; }
+      writeBook(book);
+    } catch (_) { toast(t('toast.storage')); }
+  }
   const { safeUrl } = window.TransitScenario;
   const MAX_SCENARIO_BYTES = 5 * 1024 * 1024;
   const normalizeScenario = (data, onWarning = toast) => window.TransitScenario.normalize(data, onWarning);
@@ -192,6 +221,9 @@ async function startApp() {
     } catch (err) { toast(err.message || t('toast.saved')); }
   }
   loadSaved();
+  const ownScenario = currentScenario();
+  await openSharedLink();
+  ensureSlot(ownScenario);
   rebuildRouteCache();
   let showFullscreenButton = true;
   try { showFullscreenButton = JSON.parse(localStorage.getItem(DISPLAY_STORAGE) || '{}').showFullscreenButton !== false; } catch (_) {}
@@ -892,7 +924,20 @@ async function startApp() {
     if (renderStopInspector(ctx)) return;
     renderLineInspector(ctx);
   }
-  function renderStats() { renderResults(ctx); }
+  function renderCompare() {
+    const select = $('compare-with');
+    if (!select) return;
+    const book = readBook();
+    const options = [`<option value="">${escape(t('results.published'))}</option>`, ...book.slots.filter(slot => slot.id !== book.active).map(slot => `<option value="${escape(slot.id)}"${slot.id === state.compareSlotId ? ' selected' : ''}>${escape(slot.name)}</option>`)];
+    select.innerHTML = options.join('');
+    select.onchange = () => {
+      state.compareSlotId = select.value || null;
+      state.compareName = select.selectedOptions[0]?.textContent || '';
+      if (!state.compareSlotId) state.compareName = '';
+      scheduleStats();
+    };
+  }
+  function renderStats() { renderResults(ctx); renderCompare(); }
   function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderSelection(); renderDraft(); toast(t('toast.place')); }
 
   let statsWorker = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
@@ -904,15 +949,31 @@ async function startApp() {
   function recomputeStats() {
     $('stat-passengers').textContent = '…'; $('stat-satisfaction').textContent = '…';
     const revision = ++statsRevision;
-    const scenario = { revision, customRoutes: state.customRoutes, customStops: state.customStops, overrides: state.overrides, daypart: state.daypart, networkUrl: window.TRANSIT_URLS.network, populationUrl: window.TRANSIT_URLS.population, tripRate: region.demand?.tripRate };
+    const comparison = state.compareSlotId ? readBook().slots.find(slot => slot.id === state.compareSlotId) : null;
+    const cachedCompare = comparison?.summary?.stats && comparison.summary.modelVersion === modelVersion && comparison.summary.networkVersion === network.version ? comparison.summary.stats : null;
+    const scenario = { revision, customRoutes: state.customRoutes, customStops: state.customStops, overrides: state.overrides, daypart: state.daypart, networkUrl: window.TRANSIT_URLS.network, populationUrl: window.TRANSIT_URLS.population, tripRate: region.demand?.tripRate, compareId: cachedCompare ? null : (state.compareSlotId || null), compare: cachedCompare || !comparison ? null : comparison.scenario };
     if (!workerUnavailable) {
       try {
         if (!statsWorker) {
-          statsWorker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}`, import.meta.url), { type: 'module' });
+          statsWorker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-share`, import.meta.url), { type: 'module' });
           statsWorker.onmessage = ({ data }) => {
             statsBusy = false;
             if (data.revision === statsRevision) {
-              state.baseline = data.baseline; state.stats = data.stats; renderStats();
+              state.stats = data.stats;
+              const book = readBook();
+              if (data.compareId && data.baseline) {
+                const slot = book.slots.find(item => item.id === data.compareId);
+                if (slot) { slot.summary = summaryFrom(data.baseline); slot.modelVersion = modelVersion; writeBook(book); }
+                state.baseline = data.baseline;
+              } else if (state.compareSlotId) {
+                const slot = book.slots.find(item => item.id === state.compareSlotId);
+                state.baseline = slot?.summary?.stats && slot.summary.modelVersion === modelVersion && slot.summary.networkVersion === network.version ? slot.summary.stats : data.baseline;
+              } else {
+                const slot = book.slots.find(item => item.id === book.active);
+                if (slot && !state.sharePreview) { slot.summary = summaryFrom(data.stats); slot.modelVersion = modelVersion; writeBook(book); }
+                state.baseline = data.baseline;
+              }
+              renderStats();
             }
             if (pendingStats) {
               const next = pendingStats; pendingStats = null; statsBusy = true; statsWorker.postMessage(next);
@@ -951,6 +1012,160 @@ async function startApp() {
   function openGuide() {
     const regionName = localize(region.shortName) || region.shortName?.en || '';
     modal(`<span class="chip">${escape(t('guide.chip'))}</span><h2>${escape(t('guide.title', { name: regionName }))}</h2><ol>${t('guide.body')}</ol><p>${escape(t('guide.map'))}</p>`);
+  }
+  function ensureSlot(scenario) {
+    const book = readBook();
+    let renamed = false;
+    for (const slot of book.slots) if (slot.name === 'slots.autosave') { slot.name = t('slots.autosave'); renamed = true; }
+    if (renamed) writeBook(book);
+    if (!book.slots.length) {
+      const slot = createSlot(book, scenario, null, t('slots.autosave'));
+      if (slot) { slot.modelVersion = modelVersion; slot.networkVersion = network.version; writeBook(book); }
+      return;
+    }
+    if (!book.active) { book.active = book.slots[0].id; writeBook(book); }
+    if (!state.sharePreview) {
+      const slot = book.slots.find(item => item.id === book.active);
+      if (slot?.scenario) Object.assign(state, normalizeScenario(slot.scenario));
+    }
+  }
+  function showShareBanner() {
+    const banner = $('share-banner');
+    banner.hidden = false;
+    banner.innerHTML = `<span>${escape(t('share.banner', { name: state.sharePreview?.name || t('share.untitled') }))}</span><button type="button" id="share-keep">${escape(t('share.keep'))}</button><button type="button" id="share-close">${escape(t('share.close'))}</button>`;
+    $('share-keep').onclick = keepShare;
+    $('share-close').onclick = closeShare;
+  }
+  async function openSharedLink() {
+    const payload = new URLSearchParams(location.hash.replace(/^#/, '')).get('s');
+    if (!payload) return;
+    try {
+      const expanded = expand(await decompressJson(base64UrlToBytes(payload)), network);
+      if (expanded.region && expanded.region !== region.id) {
+        const url = new URL(location.href);
+        url.searchParams.set('region', expanded.region);
+        location.replace(url.toString());
+        return;
+      }
+      if (expanded.networkVersion && ![network.version, ...LEGACY_VERSIONS].includes(expanded.networkVersion)) toast(t('scenario.version'));
+      const warnings = [];
+      Object.assign(state, normalizeScenario(expanded.scenario, warning => warnings.push(warning)));
+      state.challenge = expanded.challenge || null;
+      state.sharePreview = { name: expanded.name || t('share.untitled') };
+      showShareBanner();
+      if (warnings.length) toast(warnings.join(' '));
+    } catch (_) { toast(t('toast.importFail')); }
+  }
+  function clearShareHash() {
+    const url = new URL(location.href);
+    url.hash = '';
+    history.replaceState(null, '', url);
+    $('share-banner').hidden = true;
+  }
+  function closeShare() {
+    state.sharePreview = null;
+    clearShareHash();
+    const slot = readBook().slots.find(item => item.id === readBook().active);
+    Object.assign(state, slot?.scenario ? normalizeScenario(slot.scenario) : empty());
+    state.selected = null; state.selectedStop = null; changed();
+  }
+  function keepShare() {
+    const book = readBook();
+    const created = createSlot(book, currentScenario(), summaryFrom(state.stats), state.sharePreview?.name || t('slots.shared'));
+    if (!created) return toast(t('toast.slotLimit', { max: slotLimit }));
+    state.sharePreview = null;
+    clearShareHash();
+    writeBook(book);
+    persist();
+    toast(t('toast.slotKept'));
+  }
+  async function copyText(value) {
+    let copied = false;
+    if (navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(value); copied = true; } catch (_) {}
+    }
+    if (!copied) {
+      const field = document.createElement('textarea');
+      field.value = value; field.style.position = 'fixed'; field.style.opacity = '0'; document.body.append(field);
+      field.select(); copied = document.execCommand('copy'); field.remove();
+    }
+    if (!copied) throw new Error(t('toast.copyFail'));
+  }
+  async function shareScenario() {
+    const book = readBook();
+    const slot = book.slots.find(item => item.id === book.active);
+    const payload = bytesToBase64Url(await compressJson(minify(currentScenario(), network, { region: region.id, networkVersion: network.version, name: slot?.name || t('share.untitled'), challenge: state.challenge })));
+    const url = shareUrl(payload, region.id);
+    const notice = url.length > 8000 ? t('toast.linkLong', { count: format(url.length) }) : t('toast.linkCopied', { count: format(url.length) });
+    try { await copyText(url); toast(notice); }
+    catch (_) {
+      modal(`<span class="chip">${escape(t('top.share'))}</span><h2>${escape(notice)}</h2><input id="share-link" readonly value="${escape(url)}">`);
+      $('share-link').focus();
+      $('share-link').select();
+    }
+  }
+  function applySlot(scenario) {
+    Object.assign(state, normalizeScenario(scenario));
+    state.selected = null; state.selectedStop = null; state.tool = 'inspect'; state.draft = [];
+    changed();
+  }
+  function openSlots() {
+    const book = readBook();
+    const bytes = JSON.stringify(book).length;
+    const rows = book.slots.map(slot => `<div class="slot-row"><button type="button" data-slot-open="${escape(slot.id)}" ${slot.id === book.active ? 'aria-current="true"' : ''}>${escape(slot.name)}</button><small>${escape(slot.summary ? t('slots.summary', { trips: format(slot.summary.passengers), cost: format(slot.summary.cost) }) : t('slots.noSummary'))}</small><button type="button" data-slot-rename="${escape(slot.id)}">${escape(t('slots.rename'))}</button><button type="button" data-slot-copy="${escape(slot.id)}">${escape(t('slots.duplicate'))}</button><button type="button" data-slot-delete="${escape(slot.id)}">${escape(t('slots.delete'))}</button></div>`).join('');
+    modal(`<span class="chip">${escape(t('slots.chip'))}</span><h2>${escape(t('slots.title'))}</h2><p class="fine-print">${escape(t('slots.usage', { count: book.slots.length, max: slotLimit, size: format(Math.ceil(bytes / 1024)) }))}</p><div class="slot-list">${rows || `<p class="empty-state">${escape(t('slots.empty'))}</p>`}</div><div class="toolbar"><button id="slot-create" class="primary" type="button">${escape(t('slots.create'))}</button></div>`);
+    $('slot-create').onclick = () => {
+      const name = window.prompt(t('slots.namePrompt'), t('slots.newName'));
+      if (!name) return;
+      const fresh = readBook();
+      if (!createSlot(fresh, currentScenario(), summaryFrom(state.stats), name.trim())) return toast(t('toast.slotLimit', { max: slotLimit }));
+      writeBook(fresh);
+      closeModal();
+      toast(t('toast.slotCreated'));
+    };
+  }
+  function onSlotAction(event) {
+    const open = event.target.closest('[data-slot-open]')?.dataset.slotOpen;
+    const copy = event.target.closest('[data-slot-copy]')?.dataset.slotCopy;
+    const remove = event.target.closest('[data-slot-delete]')?.dataset.slotDelete;
+    const rename = event.target.closest('[data-slot-rename]')?.dataset.slotRename;
+    if (!open && !copy && !remove && !rename) return false;
+    const fresh = readBook();
+    const previous = fresh.active;
+    if (open && open !== fresh.active) {
+      const next = activateSlot(fresh, open, { scenario: currentScenario(), summary: summaryFrom(state.stats) });
+      if (!next) return true;
+      writeBook(fresh);
+      closeModal();
+      applySlot(next.scenario);
+      return true;
+    }
+    if (copy) {
+      if (!duplicateSlot(fresh, copy)) toast(t('toast.slotLimit', { max: slotLimit }));
+      else { writeBook(fresh); closeModal(); openSlots(); }
+      return true;
+    }
+    if (rename) {
+      const slot = fresh.slots.find(item => item.id === rename);
+      const name = window.prompt(t('slots.namePrompt'), slot?.name || '');
+      if (!name) return true;
+      renameSlot(fresh, rename, name.trim());
+      writeBook(fresh);
+      closeModal();
+      openSlots();
+      return true;
+    }
+    if (remove) {
+      const active = deleteSlot(fresh, remove);
+      writeBook(fresh);
+      closeModal();
+      if (remove === previous) {
+        const slot = fresh.slots.find(item => item.id === active);
+        if (slot) applySlot(slot.scenario);
+        else { Object.assign(state, empty()); changed(); }
+      }
+    }
+    return true;
   }
   function exportScenario() {
     const payload = { app: 'Transit Lab', region: region.id, networkVersion: network.version, savedAt: new Date().toISOString(), ...JSON.parse(snapshot()), daypart: state.daypart };
@@ -1063,9 +1278,15 @@ async function startApp() {
   };
   $('guide-button').onclick = openGuide; $('about-button').onclick = openData; $('model-link').onclick = openData;
   $('mobile-menu-button').onclick = () => {
-    modal(`<span class="chip">${escape(t('menu.chip'))}</span><h2>${escape(t('menu.title'))}</h2><div class="mobile-menu-actions"><button data-mobile-action="guide-button">${escape(t('menu.guide'))}</button><button data-mobile-action="fullscreen-button">${escape(t('menu.fullscreen'))}</button><button data-mobile-action="settings-button">${escape(t('menu.settings'))}</button><button data-mobile-action="export-button">${escape(t('menu.export'))}</button><button data-mobile-action="import-button">${escape(t('menu.import'))}</button><button data-mobile-action="reset-button">${escape(t('menu.reset'))}</button><button data-mobile-action="about-button">${escape(t('menu.about'))}</button></div>`);
+    modal(`<span class="chip">${escape(t('menu.chip'))}</span><h2>${escape(t('menu.title'))}</h2><div class="mobile-menu-actions"><button data-mobile-action="guide-button">${escape(t('menu.guide'))}</button><button data-mobile-action="fullscreen-button">${escape(t('menu.fullscreen'))}</button><button data-mobile-action="settings-button">${escape(t('menu.settings'))}</button><button data-mobile-action="share-button">${escape(t('menu.share'))}</button><button data-mobile-action="slots-button">${escape(t('menu.slots'))}</button><button data-mobile-action="export-button">${escape(t('menu.export'))}</button><button data-mobile-action="import-button">${escape(t('menu.import'))}</button><button data-mobile-action="reset-button">${escape(t('menu.reset'))}</button><button data-mobile-action="about-button">${escape(t('menu.about'))}</button></div>`);
   };
-  $('modal-content').onclick = e => { const button = e.target.closest('[data-mobile-action]'); if (button) { const id = button.dataset.mobileAction; closeModal(); if (id === 'settings-button') openSettings(); else if (id === 'fullscreen-button') toggleFullscreen(); else $(id).click(); } };
+  $('modal-content').onclick = e => {
+    if (onSlotAction(e)) return;
+    const button = e.target.closest('[data-mobile-action]');
+    if (button) { const id = button.dataset.mobileAction; closeModal(); if (id === 'settings-button') openSettings(); else if (id === 'fullscreen-button') toggleFullscreen(); else $(id).click(); }
+  };
+  $('share-button').onclick = () => { shareScenario(); };
+  $('slots-button').onclick = openSlots;
   $('modal-close').onclick = closeModal; $('modal').onclick = e => { if (e.target === $('modal')) closeModal(); };
   document.onkeydown = async e => {
     if (e.key === 'Escape') {

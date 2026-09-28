@@ -1,6 +1,8 @@
 /* Deterministic accessibility model. All outputs are estimates, never observed ridership. */
 import { modes, cruiseSpeed, capacity as seats, costPerKm as rate } from '../modes.js';
 
+export const modelVersion = 1;
+
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const rad = Math.PI / 180;
   function km(a, b) {

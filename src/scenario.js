@@ -1,5 +1,5 @@
 import { colors } from './modes.js';
-import { t } from './i18n/index.js';
+import { t } from './i18n/index.js?v=2026-09-28-share2';
 
 const host = () => globalThis.window || globalThis;
 const modeIds = new Set(Object.keys(colors));

@@ -11,12 +11,13 @@
   <link rel="stylesheet" href="./styles.css?v=2026-09-28-region">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <script defer src="./vendor/maplibre-gl.js"></script>
-  <script type="module" src="./src/main.js?v=2026-09-28-lines"></script>
+  <script type="module" src="./src/main.js?v=2026-09-28-share4"></script>
 </head>
 <body>
   <main id="map" aria-label="Map"></main>
   <div id="map-context-menu" class="map-context-menu" role="menu" data-i18n-aria="map.menu" aria-label="Map location actions" tabindex="-1" hidden></div>
 
+  <div id="share-banner" class="share-banner" hidden></div>
   <header class="topbar">
     <div class="brand">TRANSIT LAB <span class="chip" style="margin-left:9px" data-i18n="app.alpha">Sandbox alpha</span></div>
     <div class="topbar-actions">
@@ -25,6 +26,8 @@
       <button id="guide-button" data-i18n="top.guide" data-i18n-title="top.guideTitle" title="How to play">Guide</button>
       <button id="fullscreen-button" type="button" title="Toggle fullscreen (F)" data-i18n-aria="top.enterFullscreen" aria-label="Enter fullscreen">⛶ <span class="fullscreen-text" data-i18n="top.fullscreen">Fullscreen</span></button>
       <button id="settings-button" type="button" data-i18n-title="top.settingsTitle" title="Display settings">⚙ <span data-i18n="top.settings">Settings</span></button>
+      <button id="share-button" data-i18n="top.share" data-i18n-title="top.shareTitle" title="Copy a share link">Share</button>
+      <button id="slots-button" data-i18n="top.slots" data-i18n-title="top.slotsTitle" title="Saved plans">Plans</button>
       <button id="export-button" data-i18n="top.export" data-i18n-title="top.exportTitle" title="Export your network as JSON">Export</button>
       <button id="import-button" data-i18n="top.import" data-i18n-title="top.importTitle" title="Import a saved network">Import</button>
       <button id="reset-button" data-i18n="top.reset" data-i18n-title="top.resetTitle" title="Restore the original GTFS snapshot">Reset</button>
@@ -72,6 +75,7 @@
 
     <div class="section" data-panel-section="results">
       <div class="section-title"><h2 data-i18n="results.title">Network results</h2><span class="value" data-i18n="results.daily">daily estimate</span></div>
+      <label class="compare-with"><span data-i18n="results.compare">Compare with</span><select id="compare-with"></select></label>
       <div class="stat-grid" id="stats">
         <div class="stat-card"><small data-i18n="results.passengers">Passenger trips</small><strong id="stat-passengers">—</strong><span class="delta" id="delta-passengers" data-i18n="results.modelEstimate">Model estimate</span></div>
         <div class="stat-card"><small data-i18n="results.satisfaction">Satisfaction</small><strong id="stat-satisfaction">—</strong><span class="delta" id="delta-satisfaction" data-i18n="results.modelIndex">Model index</span></div>

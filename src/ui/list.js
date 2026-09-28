@@ -1,6 +1,6 @@
 import { html, raw } from '../html.js';
-import { t, plural, fmtNumber, fmtDecimal } from '../i18n/index.js';
-import { combinedHeadway } from '../lines.js';
+import { t, plural, fmtNumber, fmtDecimal } from '../i18n/index.js?v=2026-09-28-share2';
+import { combinedHeadway } from '../lines.js?v=2026-09-28-share2';
 
 export function intervalLabel(services) {
   const running = services.filter(service => service.runs);

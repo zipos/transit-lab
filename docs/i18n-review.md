@@ -46,3 +46,11 @@ Each schematic station note is a Polish rendering of the English "approximate pr
 - Ta częstotliwość zapisuje się na każdym wariancie linii.
 - Ta częstotliwość zapisuje się tylko na wariancie otwartym w tym kierunku.
 - Odbij na drugi kierunek
+
+## Share links and plans (brief 34)
+
+- Udostępniony scenariusz
+- Zachowaj kopię
+- Porównaj z
+- Opublikowana sieć
+- W tej przeglądarce brakuje miejsca na kolejny plan.

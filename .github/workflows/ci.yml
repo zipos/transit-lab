@@ -48,6 +48,9 @@ jobs:
       - name: Run line grouping audit
         run: node tests/lines-audit.mjs
 
+      - name: Run share-link audit
+        run: node tests/share-audit.mjs
+
       - name: Install Playwright and browser dependencies
         run: |
           npm install --no-save @playwright/test

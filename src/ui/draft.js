@@ -1,5 +1,5 @@
 import { html, raw } from '../html.js';
-import { t, localize } from '../i18n/index.js';
+import { t, localize } from '../i18n/index.js?v=2026-09-28-share2';
 
 export function renderDraftInspector(ctx) {
   const { $, state, colors, safeUrl, suggestLineColor, renderDraft, renderInspector, createMetro, map } = ctx;

@@ -2622,6 +2622,13 @@ body[data-network-open='false'] .ruler-panel { left: 66px; }
   .ruler-panel, body[data-network-open='false'] .ruler-panel { left: 12px; bottom: 125px; }
 }
 
+.share-banner { position: fixed; z-index: 30; top: 62px; left: 50%; display: flex; gap: 8px; align-items: center; max-width: calc(100vw - 24px); padding: 8px 10px; border-radius: 12px; background: #152d40; color: #fff; transform: translateX(-50%); }
+.share-banner button { color: #152d40; background: #fff; }
+.compare-with { display: flex; gap: 8px; align-items: center; margin: 0 0 12px; font-size: 13px; }
+.compare-with select { min-width: 0; flex: 1; }
+.slot-list { display: grid; gap: 8px; }
+.slot-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; }
+.slot-row small { grid-column: 1 / -1; }
 .line-directions { flex-wrap: wrap; }
 .line-directions button[aria-pressed='true'] { border-color: transparent; background: #152d40; color: #fff; }
 .locale-switch { display: inline-flex; align-items: center; gap: 2px; }

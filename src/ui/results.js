@@ -1,5 +1,5 @@
 import { html, raw } from '../html.js';
-import { t, fmtDecimal } from '../i18n/index.js';
+import { t, fmtDecimal } from '../i18n/index.js?v=2026-09-28-share2';
 
 export function renderResults(ctx) {
   const { $, state, format, compactMillions, region, maybeStartIntro } = ctx;
@@ -20,7 +20,8 @@ export function renderResults(ctx) {
   $('stat-cost').setAttribute('aria-label', t('results.costAria', { amount: format(stats.cost) }));
   const delta = (value, base, suffix = '', digits = 0) => {
     const difference = value - base;
-    return t('results.vsBaseline', { delta: `${difference > 0 ? '+' : ''}${digits ? fmtDecimal(difference, digits) : format(difference)}${suffix}` });
+    const text = `${difference > 0 ? '+' : ''}${digits ? fmtDecimal(difference, digits) : format(difference)}${suffix}`;
+    return state.compareName ? t('results.vsPlan', { delta: text, name: state.compareName }) : t('results.vsBaseline', { delta: text });
   };
   $('delta-passengers').textContent = baseline ? delta(stats.passengers, baseline.passengers) : t('results.modelEstimate');
   $('delta-satisfaction').textContent = served ? (baseline ? delta(stats.satisfaction, baseline.satisfaction, ` ${t('results.pts')}`, 2) : t('results.modelIndex')) : t('results.unavailable');
