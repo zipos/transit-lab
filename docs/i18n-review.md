@@ -54,3 +54,7 @@ Each schematic station note is a Polish rendering of the English "approximate pr
 - Porównaj z
 - Opublikowana sieć
 - W tej przeglądarce brakuje miejsca na kolejny plan.
+
+## Simulation progress (brief 20)
+
+- Przeliczanie

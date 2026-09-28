@@ -77,18 +77,21 @@ export async function loadRegion() {
   const lock = await loadJson(`./data/${id}/manifest.lock.json`);
   const small = $('loading')?.querySelector('small');
     const progress = (received, total) => { if (small && total) small.textContent = t('loading.progress', { percent: Math.round(100 * received / total) }); };
-  const [network, population, templates] = await Promise.all([
+  const [network, population, templates, baseline] = await Promise.all([
     loadJson(`./data/${id}/network.json?v=${lock.network.sha256}`, progress),
     loadJson(`./data/${id}/population.json?v=${lock.population.sha256}`, progress),
-    loadJson(`./regions/${id}/templates.json?v=${lock.templates.sha256}`)
+    loadJson(`./regions/${id}/templates.json?v=${lock.templates.sha256}`),
+    loadJson(`./data/${id}/baseline.json?v=2026-09-28-engine`).catch(() => null),
   ]);
   window.TRANSIT_REGION = region;
   window.TRANSIT_NETWORK = network;
   window.TRANSIT_POPULATION = population;
   window.TRANSIT_TEMPLATES = templates;
+  window.TRANSIT_BASELINE = baseline;
   window.TRANSIT_URLS = {
     network: new URL(`./data/${id}/network.json?v=${lock.network.sha256}`, document.baseURI).href,
-    population: new URL(`./data/${id}/population.json?v=${lock.population.sha256}`, document.baseURI).href
+    population: new URL(`./data/${id}/population.json?v=${lock.population.sha256}`, document.baseURI).href,
+    baseline: new URL(`./data/${id}/baseline.json?v=2026-09-28-engine`, document.baseURI).href,
   };
   applyChrome(region);
   $('loading')?.remove();

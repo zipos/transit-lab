@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="./styles.css?v=2026-09-28-region">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <script defer src="./vendor/maplibre-gl.js"></script>
-  <script type="module" src="./src/main.js?v=2026-09-28-share4"></script>
+  <script type="module" src="./src/main.js?v=2026-09-28-engine"></script>
 </head>
 <body>
   <main id="map" aria-label="Map"></main>
@@ -43,6 +43,7 @@
   <aside class="sidebar" data-i18n-aria="nav.sidebar" aria-label="Network, inspector and results">
     <div class="panel-peek" aria-hidden="true"><span data-i18n="network.peek">NETWORK</span><strong id="network-peek-total">—</strong><small data-i18n="network.patterns">patterns</small></div>
     <div class="pulse-strip"><span><b id="pulse-passengers">—</b> <span data-i18n="network.trips">trips</span></span><span><b id="pulse-satisfaction">—</b> <span data-i18n="network.satisfaction">satisfaction</span></span></div>
+    <progress class="sim-progress" max="1" value="0" hidden data-i18n-aria="results.progress" aria-label="Recalculating"></progress>
     <nav class="panel-tabs" data-i18n-aria="nav.sections" aria-label="Panel sections"><button type="button" data-panel-tab="network" class="active" aria-pressed="true" data-i18n="nav.network">Network</button><button type="button" data-panel-tab="inspect" aria-pressed="false" data-i18n="nav.inspect">Inspect</button><button type="button" data-panel-tab="results" aria-pressed="false" data-i18n="nav.results">Results</button></nav>
     <div class="section" data-panel-section="network">
       <div class="section-title"><h1 data-i18n="network.shape">Shape the network</h1><span class="value" id="line-total">— lines</span></div>
@@ -76,6 +77,7 @@
     <div class="section" data-panel-section="results">
       <div class="section-title"><h2 data-i18n="results.title">Network results</h2><span class="value" data-i18n="results.daily">daily estimate</span></div>
       <label class="compare-with"><span data-i18n="results.compare">Compare with</span><select id="compare-with"></select></label>
+      <progress class="sim-progress" max="1" value="0" hidden data-i18n-aria="results.progress" aria-label="Recalculating"></progress>
       <div class="stat-grid" id="stats">
         <div class="stat-card"><small data-i18n="results.passengers">Passenger trips</small><strong id="stat-passengers">—</strong><span class="delta" id="delta-passengers" data-i18n="results.modelEstimate">Model estimate</span></div>
         <div class="stat-card"><small data-i18n="results.satisfaction">Satisfaction</small><strong id="stat-satisfaction">—</strong><span class="delta" id="delta-satisfaction" data-i18n="results.modelIndex">Model index</span></div>

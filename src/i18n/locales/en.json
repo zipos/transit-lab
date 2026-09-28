@@ -80,6 +80,7 @@
     "noTrips": "No trips",
     "fine": "Passenger demand and satisfaction are simulated, not measured.",
     "how": "How?",
+    "progress": "Recalculating",
     "vsBaseline": "{{delta}} vs baseline",
     "vsPlan": "{{delta}} vs {{name}}",
     "compare": "Compare with",

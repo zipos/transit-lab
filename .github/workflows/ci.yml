@@ -51,6 +51,12 @@ jobs:
       - name: Run share-link audit
         run: node tests/share-audit.mjs
 
+      - name: Run revision audit
+        run: node tests/revision-audit.mjs
+
+      - name: Run simulation benchmark
+        run: node tests/bench-sim.mjs
+
       - name: Install Playwright and browser dependencies
         run: |
           npm install --no-save @playwright/test

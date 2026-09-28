@@ -99,6 +99,7 @@
     "noTrips": "Brak podróży",
     "fine": "Popyt i zadowolenie są symulowane, a nie mierzone.",
     "how": "Jak?",
+    "progress": "Przeliczanie",
     "vsBaseline": "{{delta}} wobec bazowej",
     "vsPlan": "{{delta}} wobec {{name}}",
     "compare": "Porównaj z",

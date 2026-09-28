@@ -1,6 +1,6 @@
-import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-share2';
-import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-share2';
-import { createModel, modelVersion } from './sim/model.js?v=2026-09-28-share2';
+import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-engine';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-engine';
+import { createModel, modelVersion } from './sim/model.js?v=2026-09-28-engine';
 import { minify, expand, bytesToBase64Url, base64UrlToBytes, compressJson, decompressJson, shareUrl } from './share.js?v=2026-09-28-share2';
 import { createSlot, activateSlot, duplicateSlot, renameSlot, deleteSlot, slotLimit } from './slots.js?v=2026-09-28-share2';
 import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js?v=2026-09-28-share2';
@@ -940,60 +940,152 @@ async function startApp() {
   function renderStats() { renderResults(ctx); renderCompare(); }
   function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderSelection(); renderDraft(); toast(t('toast.place')); }
 
-  let statsWorker = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
+  let statsPool = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
+  let sliceArrivals = [], sliceProgress = [];
   function scheduleStats() {
-    // Invalidate an in-flight result as soon as the scenario changes.
     statsRevision++;
     clearTimeout(recomputeTimer); recomputeTimer = setTimeout(recomputeStats, 35);
   }
+  function showProgress(value, visible) {
+    for (const bar of document.querySelectorAll('.sim-progress')) {
+      bar.hidden = !visible;
+      if (visible) bar.value = value;
+    }
+  }
+  function shippedPeak() {
+    const file = window.TRANSIT_BASELINE;
+    if (!file || file.modelVersion !== modelVersion || file.networkVersion !== network.version || file.daypart !== 'peak') return null;
+    return file.stats;
+  }
+  function poolCount() {
+    const memory = navigator.deviceMemory || 8;
+    const phone = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+    if (phone || memory <= 4) return 1;
+    return Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+  }
+  function originSlices(count) {
+    const zones = sim.zones.length;
+    const slices = [];
+    for (let index = 0; index < count; index++) {
+      const start = Math.floor(index * zones / count);
+      const end = Math.floor((index + 1) * zones / count);
+      if (end > start) slices.push([start, end]);
+    }
+    return slices;
+  }
+  function applyWorkerResult(data) {
+    statsBusy = false;
+    showProgress(0, false);
+    if (data.revision === statsRevision) {
+      state.stats = data.stats;
+      const book = readBook();
+      if (data.compareId && data.baseline) {
+        const slot = book.slots.find(item => item.id === data.compareId);
+        if (slot) { slot.summary = summaryFrom(data.baseline); slot.modelVersion = modelVersion; writeBook(book); }
+        state.baseline = data.baseline;
+      } else if (state.compareSlotId) {
+        const slot = book.slots.find(item => item.id === state.compareSlotId);
+        state.baseline = slot?.summary?.stats && slot.summary.modelVersion === modelVersion && slot.summary.networkVersion === network.version ? slot.summary.stats : data.baseline;
+      } else {
+        const slot = book.slots.find(item => item.id === book.active);
+        if (slot && !state.sharePreview) { slot.summary = summaryFrom(data.stats); slot.modelVersion = modelVersion; writeBook(book); }
+        state.baseline = data.baseline;
+      }
+      renderStats();
+    }
+    if (pendingStats) {
+      const next = pendingStats;
+      pendingStats = null;
+      postSlices(next);
+    }
+  }
+  function onPoolMessage(data) {
+    if (typeof data.progress === 'number') {
+      if (data.revision !== statsRevision) return;
+      sliceProgress[data.workerIndex] = data.progress;
+      const value = sliceProgress.reduce((sum, part) => sum + (part || 0), 0) / Math.max(1, sliceProgress.length);
+      showProgress(value, true);
+      return;
+    }
+    if (data.revision !== statsRevision || !data.partial) return;
+    sliceArrivals[data.workerIndex] = data;
+    if (sliceArrivals.some(item => !item)) return;
+    const stats = sim.combinePartials(sliceArrivals.map(item => item.stats));
+    const compared = sliceArrivals[0].compare ? sim.combinePartials(sliceArrivals.map(item => item.compare)) : null;
+    const published = sliceArrivals[0].baseline ? sim.combinePartials(sliceArrivals.map(item => item.baseline)) : shippedPeak();
+    applyWorkerResult({ revision: data.revision, stats, baseline: compared || published, compareId: sliceArrivals[0].compareId });
+  }
+  function ensurePool() {
+    const count = poolCount();
+    if (statsPool?.length === count) return statsPool;
+    statsPool?.forEach(worker => worker.terminate());
+    statsPool = Array.from({ length: count }, () => {
+      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-engine`, import.meta.url), { type: 'module' });
+      worker.onmessage = ({ data }) => onPoolMessage(data);
+      worker.onerror = () => {
+        statsPool?.forEach(item => item.terminate());
+        statsPool = null;
+        workerUnavailable = true;
+        statsBusy = false;
+        pendingStats = null;
+        showProgress(0, false);
+        recomputeStats();
+      };
+      return worker;
+    });
+    return statsPool;
+  }
+  function postSlices(scenario) {
+    const workers = ensurePool();
+    const slices = originSlices(workers.length);
+    sliceArrivals = Array(slices.length).fill(null);
+    sliceProgress = Array(slices.length).fill(0);
+    showProgress(0, true);
+    statsBusy = true;
+    slices.forEach(([originStart, originEnd], index) => {
+      workers[index].postMessage({ ...scenario, originStart, originEnd, workerIndex: index });
+    });
+  }
   function recomputeStats() {
-    $('stat-passengers').textContent = '…'; $('stat-satisfaction').textContent = '…';
     const revision = ++statsRevision;
     const comparison = state.compareSlotId ? readBook().slots.find(slot => slot.id === state.compareSlotId) : null;
     const cachedCompare = comparison?.summary?.stats && comparison.summary.modelVersion === modelVersion && comparison.summary.networkVersion === network.version ? comparison.summary.stats : null;
-    const scenario = { revision, customRoutes: state.customRoutes, customStops: state.customStops, overrides: state.overrides, daypart: state.daypart, networkUrl: window.TRANSIT_URLS.network, populationUrl: window.TRANSIT_URLS.population, tripRate: region.demand?.tripRate, compareId: cachedCompare ? null : (state.compareSlotId || null), compare: cachedCompare || !comparison ? null : comparison.scenario };
+    const untouched = !state.customRoutes.length && !state.customStops.length && !Object.keys(state.overrides).length;
+    const shipped = shippedPeak();
+    if (shipped && state.daypart === 'peak' && untouched && !comparison) {
+      applyWorkerResult({ revision, stats: shipped, baseline: shipped, compareId: null });
+      return;
+    }
+    const scenario = {
+      revision,
+      customRoutes: state.customRoutes,
+      customStops: state.customStops,
+      overrides: state.overrides,
+      daypart: state.daypart,
+      networkUrl: window.TRANSIT_URLS.network,
+      populationUrl: window.TRANSIT_URLS.population,
+      tripRate: region.demand?.tripRate,
+      compareId: cachedCompare ? null : (state.compareSlotId || null),
+      compare: cachedCompare || !comparison ? null : comparison.scenario,
+      skipBaseline: state.daypart === 'peak' && !!shipped,
+    };
     if (!workerUnavailable) {
       try {
-        if (!statsWorker) {
-          statsWorker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-share`, import.meta.url), { type: 'module' });
-          statsWorker.onmessage = ({ data }) => {
-            statsBusy = false;
-            if (data.revision === statsRevision) {
-              state.stats = data.stats;
-              const book = readBook();
-              if (data.compareId && data.baseline) {
-                const slot = book.slots.find(item => item.id === data.compareId);
-                if (slot) { slot.summary = summaryFrom(data.baseline); slot.modelVersion = modelVersion; writeBook(book); }
-                state.baseline = data.baseline;
-              } else if (state.compareSlotId) {
-                const slot = book.slots.find(item => item.id === state.compareSlotId);
-                state.baseline = slot?.summary?.stats && slot.summary.modelVersion === modelVersion && slot.summary.networkVersion === network.version ? slot.summary.stats : data.baseline;
-              } else {
-                const slot = book.slots.find(item => item.id === book.active);
-                if (slot && !state.sharePreview) { slot.summary = summaryFrom(data.stats); slot.modelVersion = modelVersion; writeBook(book); }
-                state.baseline = data.baseline;
-              }
-              renderStats();
-            }
-            if (pendingStats) {
-              const next = pendingStats; pendingStats = null; statsBusy = true; statsWorker.postMessage(next);
-            }
-          };
-          statsWorker.onerror = () => {
-            statsWorker.terminate(); statsWorker = null; workerUnavailable = true; statsBusy = false; pendingStats = null;
-            recomputeStats();
-          };
-        }
-        if (statsBusy) pendingStats = structuredClone(scenario);
-        else { statsBusy = true; statsWorker.postMessage(scenario); }
+        if (statsBusy) pendingStats = scenario;
+        else postSlices(scenario);
         return;
-      } catch (_) { statsWorker?.terminate(); statsWorker = null; workerUnavailable = true; }
+      } catch (_) {
+        statsPool?.forEach(worker => worker.terminate());
+        statsPool = null;
+        workerUnavailable = true;
+      }
     }
-    // Local-file previews and browsers without workers retain the same model.
     setTimeout(() => {
       if (revision !== statsRevision) return;
-      state.baseline = sim.calculate(network, [], [], {}, state.daypart);
+      const compareStats = scenario.compare ? sim.calculate(network, scenario.compare.customRoutes || [], scenario.compare.customStops || [], scenario.compare.overrides || {}, state.daypart) : null;
+      state.baseline = compareStats || shipped || sim.calculate(network, [], [], {}, state.daypart);
       state.stats = sim.calculate(network, scenario.customRoutes, scenario.customStops, scenario.overrides, state.daypart);
+      showProgress(0, false);
       renderStats();
     }, 15);
   }
