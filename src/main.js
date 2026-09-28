@@ -3,6 +3,7 @@ import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plur
 import { createModel } from './sim/model.js';
 import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js';
 import { colors, cruiseSpeed } from './modes.js';
+import { groupLines } from './lines.js';
 import { renderRouteList } from './ui/list.js';
 import { renderDraftInspector } from './ui/draft.js';
 import { renderStopInspector } from './ui/inspector-stop.js';
@@ -61,7 +62,7 @@ async function startApp() {
   }
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
-  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
+  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
   let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0;
   let vehiclesActive = false, lastVehicleCount = 0;
 
@@ -97,14 +98,21 @@ async function startApp() {
   let routeCacheList = [];
   let routeCacheMap = new Map();
   let routeIndexMap = new Map();
+  let lineCache = [];
+  let lineByPatternId = new Map();
   function rebuildRouteCache() {
     routeCacheList = network.routes.concat(state.customRoutes).map(r => ({ ...r, ...(state.overrides[r.id] || {}) }));
     routeCacheMap = new Map(routeCacheList.map(r => [r.id, r]));
     routeIndexMap = new Map(routeCacheList.map((r, i) => [r.id, i]));
+    lineCache = groupLines(routeCacheList, id => stop(id));
+    lineByPatternId = new Map();
+    for (const line of lineCache) for (const pattern of line.patterns) lineByPatternId.set(pattern.id, line);
   }
   rebuildRouteCache();
   function allRoutes() { return routeCacheList; }
   function routeById(id) { return routeCacheMap.get(id); }
+  function lines() { return lineCache; }
+  function lineFor(id) { return lineByPatternId.get(id) || null; }
 
   function relativeLuminance(hex) {
     if (!hex || typeof hex !== 'string') return null;
@@ -537,7 +545,8 @@ async function startApp() {
   function renderSelection() {
     if (!map.getSource('selected-route')) return;
     const selected = routeById(state.selected);
-    setSourceData('selected-route', featureCollection(selected ? [routeFeature(selected)] : []));
+    const highlighted = selected ? (lineFor(selected.id)?.patterns || [selected]) : [];
+    setSourceData('selected-route', featureCollection(highlighted.map(routeFeature)));
     setSourceData('selected-stops', featureCollection(selected ? selected.stopIds.map(stop).filter(Boolean).map(s => pointFeature(s, { color: routeColor(selected), mode: selected.mode })) : []));
     const inspected = stop(state.selectedStop);
     setSourceData('inspected-stop', featureCollection(inspected ? [pointFeature(inspected)] : []));
@@ -772,23 +781,31 @@ async function startApp() {
     return best;
   }
   function routeGeometry(ids, ring = false) { return [ids.concat(ring && ids.length >= 3 ? ids[0] : []).map(stop).filter(Boolean).map(s => s.pos)]; }
+  function writeRoute(route, fields) {
+    if (route.source === 'player') {
+      const i = state.customRoutes.findIndex(item => item.id === route.id);
+      if (i >= 0) state.customRoutes[i] = { ...state.customRoutes[i], ...fields };
+    } else state.overrides[route.id] = { ...(state.overrides[route.id] || {}), ...fields };
+  }
+  function lineTargets(route, field) {
+    const lineWide = field === 'color' || ((field === 'headway' || field === 'active') && !state.lineIntervalOnly);
+    return lineWide ? (lineFor(route.id)?.patterns || [route]) : [route];
+  }
   function setRouteStops(route, ids) {
     if (ids.length < 2) return toast(t('toast.needTwo'));
     remember();
     const ring = route.ring === true && ids.length >= 3;
-    const geometry = routeGeometry(ids, ring);
-    if (route.source === 'player') {
-      const i = state.customRoutes.findIndex(r => r.id === route.id);
-      state.customRoutes[i] = { ...state.customRoutes[i], ring, stopIds: ids, geometry, edited: true };
-    } else state.overrides[route.id] = { ...(state.overrides[route.id] || {}), stopIds: ids, geometry, edited: true };
+    writeRoute(route, { ring, stopIds: ids, geometry: routeGeometry(ids, ring), edited: true });
     changed();
   }
   function setRouteField(route, field, value) {
     remember();
-    if (route.source === 'player') {
-      const i = state.customRoutes.findIndex(r => r.id === route.id);
-      state.customRoutes[i] = { ...state.customRoutes[i], [field]: value };
-    } else state.overrides[route.id] = { ...(state.overrides[route.id] || {}), [field]: value };
+    for (const item of lineTargets(route, field)) writeRoute(item, { [field]: value });
+    changed();
+  }
+  function revertLine(route) {
+    remember();
+    for (const item of lineFor(route.id)?.patterns || [route]) delete state.overrides[item.id];
     changed();
   }
   function changed() { rebuildRouteCache(); persist(); renderList(); renderInspector(); renderNetwork(); renderSelection(); scheduleStats(); introSync(); }
@@ -802,14 +819,17 @@ async function startApp() {
     setMobileView('line'); if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false);
     setPanel('inspector', true); renderList(); renderInspector(); renderSelection();
   }
-  function selectRoute(id) {
-    state.selected = id; state.selectedStop = null; state.tool = 'inspect'; state.draft = []; state.movingDraftIndex = null; setMobileView('line'); if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false); setPanel('inspector', true); renderList(); renderInspector(); renderSelection();
-    const r = routeById(id), points = (r?.geometry || []).flat();
+  function selectRoute(id, options = {}) {
+    const nextLine = lineFor(id);
+    if (nextLine?.key !== lineFor(state.selected)?.key) state.lineIntervalOnly = false;
+    state.selected = id; state.selectedStop = null; state.tool = 'inspect'; state.draft = []; state.movingDraftIndex = null; setMobileView('line'); if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false); setPanel('inspector', true); renderList(); renderInspector(); renderSelection(); introSync();
+    if (options.fit === false) return;
+    const highlighted = nextLine?.patterns || [routeById(id)];
+    const points = highlighted.flatMap(route => (route?.geometry || []).flat());
     if (points.length > 1) {
       const bounds = new maplibregl.LngLatBounds(); points.forEach(p => bounds.extend(p));
       map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 13.7, duration: 650 });
     }
-    introSync();
   }
   function createMetro() {
     if (state.draft.length < (state.draftRing ? 3 : 2)) return toast(state.draftRing ? t('toast.ring') : t('toast.two'));
@@ -940,7 +960,13 @@ async function startApp() {
     setTimeout(() => URL.revokeObjectURL(url), 1000); toast(t('toast.exported'));
   }
 
-  $('route-list').onclick = e => { const card = e.target.closest('[data-route]'); if (card) card.dataset.route === state.selected ? clearSelection() : selectRoute(card.dataset.route); };
+  $('route-list').onclick = e => {
+    const card = e.target.closest('[data-route]');
+    if (!card) return;
+    const line = lineFor(card.dataset.route);
+    if (line?.patterns.some(pattern => pattern.id === state.selected)) clearSelection();
+    else selectRoute(card.dataset.route);
+  };
   $('template-list').onclick = e => { const button = e.target.closest('[data-template-id]'); if (button) loadTemplate(button.dataset.templateId); };
   $('network-rail').onclick = () => setPanel('network', !state.networkOpen);
   document.querySelector('.panel-tabs').onclick = e => {
@@ -1294,7 +1320,7 @@ async function startApp() {
     if (isDebug) window.__DEBUG__.lastVehicleCount = lastVehicleCount;
     setSourceData('vehicles', featureCollection(features));
   }
-  Object.assign(ctx, { $, state, allRoutes, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, remember, changed, toast, map, enterMetroTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry });
+  Object.assign(ctx, { $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, remember, changed, toast, map, enterMetroTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry });
   renderTemplates(); renderList(); renderInspector();
   document.addEventListener('pointerdown', e => {
     if (intro.active && intro.index === 0) return;

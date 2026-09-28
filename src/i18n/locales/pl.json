@@ -335,6 +335,13 @@
     "stops": "{{count}} przystanków",
     "pkm": "Rozkład PKM Jaworzno · {{count}} przystanków",
     "interval": "Częstotliwość · minuty",
+    "everyCombined": "co ~{{minutes}} min",
+    "directionTo": "→ {{name}}",
+    "onlyDirection": "Tylko ten kierunek",
+    "lineInterval": "Ta częstotliwość zapisuje się na każdym wariancie linii.",
+    "patternInterval": "Ta częstotliwość zapisuje się tylko na wariancie otwartym w tym kierunku.",
+    "variant": "Wariant",
+    "mirror": "Odbij na drugi kierunek",
     "ringHelp": "Kursuje w jednym kierunku i wraca z ostatniego przystanku do pierwszego.",
     "playerHelp": "Oferta działa w obu kierunkach; powroty i koszt są w modelu. Częstotliwość jest taka sama w każdym okresie.",
     "offHelp": "Ten wariant trasy nie ma kursów w wybranym okresie.",
@@ -440,6 +447,8 @@
   },
   "count": {
     "stops": { "one": "{{n}} przystanek", "few": "{{n}} przystanki", "many": "{{n}} przystanków" },
-    "patterns": { "one": "{{n}} wariant", "few": "{{n}} warianty", "many": "{{n}} wariantów" }
+    "patterns": { "one": "{{n}} wariant", "few": "{{n}} warianty", "many": "{{n}} wariantów" },
+    "lines": { "one": "{{n}} linia", "few": "{{n}} linie", "many": "{{n}} linii" },
+    "variants": { "one": "{{n}} wariant", "few": "{{n}} warianty", "many": "{{n}} wariantów" }
   }
 }

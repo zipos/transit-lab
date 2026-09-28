@@ -2622,6 +2622,8 @@ body[data-network-open='false'] .ruler-panel { left: 66px; }
   .ruler-panel, body[data-network-open='false'] .ruler-panel { left: 12px; bottom: 125px; }
 }
 
+.line-directions { flex-wrap: wrap; }
+.line-directions button[aria-pressed='true'] { border-color: transparent; background: #152d40; color: #fff; }
 .locale-switch { display: inline-flex; align-items: center; gap: 2px; }
 .locale-switch button { min-width: 36px; padding: 0 8px; }
 .locale-switch button[aria-pressed='true'] { border-color: transparent; background: #152d40; color: #fff; }

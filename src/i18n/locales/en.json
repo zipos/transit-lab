@@ -316,6 +316,13 @@
     "stops": "{{count}} stops",
     "pkm": "PKM Jaworzno timetable · {{count}} stops",
     "interval": "Service interval · minutes",
+    "everyCombined": "every ~{{minutes}} min",
+    "directionTo": "→ {{name}}",
+    "onlyDirection": "Only this direction",
+    "lineInterval": "This interval is saved on every pattern of the line.",
+    "patternInterval": "This interval is saved only on the pattern open in this direction.",
+    "variant": "Variant",
+    "mirror": "Mirror to other direction",
     "ringHelp": "Continuous one direction service, returning from the last stop to the first.",
     "playerHelp": "Service runs in both directions; return trips and cost are modeled. The interval stays the same in every period.",
     "offHelp": "This pattern has no trips in the selected period.",
@@ -421,6 +428,8 @@
   },
   "count": {
     "stops": { "one": "{{n}} stop", "other": "{{n}} stops" },
-    "patterns": { "one": "{{n}} pattern", "other": "{{n}} patterns" }
+    "patterns": { "one": "{{n}} pattern", "other": "{{n}} patterns" },
+    "lines": { "one": "{{n}} line", "other": "{{n}} lines" },
+    "variants": { "one": "{{n}} variant", "other": "{{n}} variants" }
   }
 }

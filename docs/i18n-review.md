@@ -38,3 +38,11 @@ The English side of those template fields is the previous text. `sourceTitle` st
 ### Station notes
 
 Each schematic station note is a Polish rendering of the English "approximate proxy" sentence. The place names inside them are unchanged.
+
+## Line list (brief 13)
+
+- co ~{{minutes}} min
+- Tylko ten kierunek
+- Ta częstotliwość zapisuje się na każdym wariancie linii.
+- Ta częstotliwość zapisuje się tylko na wariancie otwartym w tym kierunku.
+- Odbij na drugi kierunek

@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { groupLines, combinedHeadway } from '../src/lines.js';
+import { createModel } from '../src/sim/model.js';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const network = JSON.parse(fs.readFileSync(path.join(root, 'data/gzm/network.json'), 'utf8'));
+const population = JSON.parse(fs.readFileSync(path.join(root, 'data/gzm/population.json'), 'utf8'));
+const stops = new Map(network.stops.map(stop => [stop.id, stop]));
+const lines = groupLines(network.routes, id => stops.get(id));
+const t6 = lines.filter(line => line.source === 'ztm' && line.name === 'T6');
+assert.equal(t6.length, 1);
+assert.equal(t6[0].patterns.length, 2);
+assert.equal(t6[0].directions.length, 2);
+assert.ok(lines.length < network.routes.length * 0.6, `${lines.length} lines from ${network.routes.length} patterns`);
+const trams = lines.filter(line => line.mode === 'tram').map(line => line.name);
+const t2 = trams.indexOf('T2');
+const t11 = trams.indexOf('T11');
+assert.ok(t2 >= 0 && t11 > t2, 'T2 sorts before T11');
+assert.equal(combinedHeadway([15, 15]), 7.5);
+assert.equal(combinedHeadway([8, 8]), 4);
+assert.ok(network.routes.filter(route => route.source === 'ks' && route.name === 'S1').length >= 3);
+
+const sim = createModel(network, population);
+const bothIds = t6[0].patterns.map(pattern => pattern.id);
+const one = { [bothIds[0]]: { headway: 5 } };
+const both = Object.fromEntries(bothIds.map(id => [id, { headway: 5 }]));
+const costOne = sim.calculate(network, [], [], one).cost;
+const costBoth = sim.calculate(network, [], [], both).cost;
+assert.ok(costBoth > costOne, `both directions cost ${costBoth}, one direction costs ${costOne}`);
+console.log(`Lines audit passed: ${lines.length} lines from ${network.routes.length} patterns. T6 once. Both directions at 5 min cost ${costBoth}, one direction costs ${costOne}.`);
