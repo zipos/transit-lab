@@ -61,7 +61,11 @@ assert.notEqual(baseline.cost, straightFallback.cost, 'published route shapes sh
 assert.notEqual(baseline.passengers, straightFallback.passengers, 'shape-derived travel times should affect route choice');
 assert.equal(disabled.passengers, 0, 'walking-only paths cannot count as transit');
 assert.equal(disabled.cost, 0);
-assert.equal(disabled.load, 0);
+assert.equal(disabled.boardings, 0);
+assert.equal(disabled.share, 0);
+assert.equal(baseline.asc, 0);
+assert.equal(baseline.calibrated, false);
+assert.equal(Number.isInteger(baseline.satisfaction), true);
 assert.equal(sim.calculate(network, [], [], {}, 'peak').passengers, baseline.passengers, 'peak is the stored baseline');
 const saturday = sim.calculate(network, [], [], {}, 'saturday');
 assert.notEqual(saturday.passengers, baseline.passengers, 'Saturday drops patterns with no Saturday trips');
@@ -102,7 +106,7 @@ const openResult = sim.calculate(ringNetwork, [openRoute], [], {});
 const twoWayOpenResult = sim.calculate(ringNetwork, [{ ...openRoute, source: 'player' }], [], {});
 assert.ok(ringResult.cost > openResult.cost, 'ring cost includes the closing segment');
 assert.ok(ringResult.cost < twoWayOpenResult.cost, 'a one-direction ring does not double-count reverse trips');
-assert.ok(Number.isInteger(ringResult.satisfaction * 100), 'satisfaction keeps hundredth-point precision');
+assert.equal(Number.isInteger(ringResult.satisfaction), true, 'satisfaction is a whole number');
 
 let workerResult;
 runJob({ revision: 7, network, population, customRoutes: [metro], customStops: [], overrides: {} }, message => { workerResult = message; });

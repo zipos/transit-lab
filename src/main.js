@@ -1,6 +1,6 @@
 import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-engine';
-import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-zones';
-import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-zones';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-choice';
+import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-choice';
 import { minify, expand, bytesToBase64Url, base64UrlToBytes, compressJson, decompressJson, shareUrl } from './share.js?v=2026-09-28-share2';
 import { createSlot, activateSlot, duplicateSlot, renameSlot, deleteSlot, slotLimit } from './slots.js?v=2026-09-28-share2';
 import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js?v=2026-09-28-share2';
@@ -10,7 +10,7 @@ import { renderRouteList } from './ui/list.js?v=2026-09-28-share2';
 import { renderDraftInspector } from './ui/draft.js?v=2026-09-28-share2';
 import { renderStopInspector } from './ui/inspector-stop.js?v=2026-09-28-share2';
 import { renderLineInspector } from './ui/inspector-line.js?v=2026-09-28-share2';
-import { renderResults } from './ui/results.js?v=2026-09-28-share2';
+import { renderResults } from './ui/results.js?v=2026-09-28-choice';
 import { createModal } from './ui/modal.js?v=2026-09-28-share2';
 
 window.TransitScenario = { normalize, safeUrl: scenarioSafeUrl, safeColor };
@@ -29,7 +29,7 @@ async function startApp() {
   const network = window.TRANSIT_NETWORK;
   const population = window.TRANSIT_POPULATION;
   const templates = window.TRANSIT_TEMPLATES?.templates || [];
-  const sim = createModel(network, population, { tripRate: region.demand?.tripRate });
+  const sim = createModel(network, population, { tripRate: region.demand?.tripRate, choice: region.demand?.choice });
   const densityCells = Array.isArray(population?.cells) ? population.cells.filter(c => Number.isFinite(+c.lon) && Number.isFinite(+c.lat) && Number.isFinite(+c.density) && +c.density > 0) : [];
   const maskCells = Array.isArray(population?.maskCells) ? population.maskCells.filter(c => c.geometry?.type === 'Polygon' && Number.isFinite(+c.density)) : [];
   const cityBoundaries = population?.cityBoundaries?.type === 'FeatureCollection' ? population.cityBoundaries : { type: 'FeatureCollection', features: [] };
@@ -1031,7 +1031,7 @@ async function startApp() {
     if (statsPool?.length === count) return statsPool;
     statsPool?.forEach(worker => worker.terminate());
     statsPool = Array.from({ length: count }, () => {
-      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-zones`, import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-choice`, import.meta.url), { type: 'module' });
       worker.onmessage = ({ data }) => onPoolMessage(data);
       worker.onerror = () => {
         statsPool?.forEach(item => item.terminate());

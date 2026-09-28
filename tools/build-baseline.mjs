@@ -9,7 +9,7 @@ if (!region) {
 const network = JSON.parse(readFileSync(`data/${region}/network.json`, 'utf8'));
 const population = JSON.parse(readFileSync(`data/${region}/population.json`, 'utf8'));
 const manifest = JSON.parse(readFileSync(`regions/${region}/region.json`, 'utf8'));
-const sim = createModel(network, population, { tripRate: manifest.demand?.tripRate });
+const sim = createModel(network, population, { tripRate: manifest.demand?.tripRate, choice: manifest.demand?.choice });
 const stats = sim.calculate(network, [], [], {}, 'peak');
 const baseline = { modelVersion, networkVersion: network.version, daypart: 'peak', stats };
 writeFileSync(`data/${region}/baseline.json`, `${JSON.stringify(baseline)}\n`);

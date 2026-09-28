@@ -1,4 +1,4 @@
-import { createModel } from './model.js?v=2026-09-28-zones';
+import { createModel } from './model.js?v=2026-09-28-choice';
 
 let model;
 const sliceBaseline = new Map();

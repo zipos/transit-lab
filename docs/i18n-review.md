@@ -63,6 +63,19 @@ Each schematic station note is a Polish rendering of the English "approximate pr
 - Strefa popytu
 - {{count}} mieszkańców w tej strefie
 
+## Mode choice (brief 23)
+
+Draft Polish. The share is explicitly not calibrated.
+
+- udział
+- Udział transportu
+- Od drzwi do drzwi
+- Bez kalibracji
+- wsiadania
+- pieszo, poniżej 1,2 km
+- {{share}}% w 800 m od tramwaju lub kolei
+- udział wewnątrz tej gminy
+
 ## Simulation progress (brief 20)
 
 - Przeliczanie

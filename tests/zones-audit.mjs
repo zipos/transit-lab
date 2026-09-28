@@ -75,7 +75,7 @@ assert.notEqual(after, before, 'a station at that cell should change trips from 
 console.log('Zone audit passed', {
   nearbyStops: `${hit}/${near}`,
   passengers: baseline.passengers,
-  coverage: baseline.coverage,
+  coverage: baseline.share,
   wait: baseline.wait,
   journey: baseline.travel,
   previous,

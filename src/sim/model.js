@@ -1,7 +1,8 @@
 /* Deterministic accessibility model. All outputs are estimates, never observed ridership. */
-import { modes, cruiseSpeed, capacity as seats, costPerKm as rate } from '../modes.js';
+import { modes, cruiseSpeed, costPerKm as rate } from '../modes.js';
+import { resolveChoice, waitMinutes, carMinutes } from './params.js';
 
-export const modelVersion = 3;
+export const modelVersion = 4;
 
 export function walkMinutes(distanceKm) {
   return distanceKm * 1.25 / 4.5 * 60;
@@ -20,6 +21,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const zoneIds = [];
   const zoneResidents = [];
   const zoneAttraction = [];
+  const zoneDensity = [];
   const zoneCities = [];
   const preparedZones = Array.isArray(population?.zones) && population.zones.length ? population.zones : null;
   let preparedAccess = null;
@@ -40,6 +42,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       zoneIds.push(zone.id);
       zoneResidents.push(zone.residents);
       zoneAttraction.push(Math.sqrt(zone.residents) * (0.6 + Math.log1p(zone.density) / 8) * (0.7 + centrality));
+      zoneDensity.push(zone.density);
       zoneCities.push(zone.municipality);
       preparedAccess.push(zone.access.map(([index, minutes]) => [index, minutes]));
     }
@@ -78,6 +81,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         zoneIds.push(name);
         zoneResidents.push(residents);
         zoneAttraction.push(Math.sqrt(residents) * (0.6 + Math.log1p(density) / 8) * (0.7 + centrality));
+        zoneDensity.push(density);
         zoneCities.push(city);
       }
     }
@@ -86,23 +90,25 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   // 0.6 potential cross-neighborhood journeys per resident/day is a game
   // assumption, not a published travel survey result.
   const tripRate = Number(options.tripRate) > 0 ? Number(options.tripRate) : 0.6;
+  const choice = resolveChoice(options.choice);
   const estimatedDemand = residentTotal > 0 ? Math.round(residentTotal * tripRate) : 90000;
   const meanResidents = residentTotal / zones.length || 1;
   const originWeights = zoneResidents.map(n => n / meanResidents);
   const meanAttraction = zoneAttraction.reduce((a, b) => a + b, 0) / zones.length || 1;
   const destinationWeights = zoneAttraction.map(n => n / meanAttraction);
-  const TRANSFER_PENALTY = 4;
-  const ALIGHT = 0.3;
   let scratch = null;
   function scratchFor(nodes) {
     const heapCap = nodes * 8;
-    if (!scratch || scratch.dist.length < nodes || scratch.heapKeys.length < heapCap) {
+    if (!scratch || !scratch.ivt || scratch.dist.length < nodes || scratch.heapKeys.length < heapCap) {
       const nodeCap = Math.max(nodes, scratch ? Math.max(scratch.dist.length, nodes) : nodes);
       const cap = Math.max(heapCap, scratch ? scratch.heapKeys.length : 0);
       scratch = {
         dist: new Float64Array(nodeCap),
         wait: new Float64Array(nodeCap),
+        ivt: new Float64Array(nodeCap),
+        walk: new Float64Array(nodeCap),
         boards: new Uint16Array(nodeCap),
+        alights: new Uint16Array(nodeCap),
         targets: new Uint8Array(nodeCap),
         heapKeys: new Float64Array(cap),
         heapVals: new Int32Array(cap),
@@ -245,14 +251,21 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     });
   }
   function blankLocal() {
-    return Object.fromEntries([...new Set(zoneCities)].map(city => [city, { demand: 0, riders: 0, satisfaction: 0 }]));
+    return Object.fromEntries([...new Set(zoneCities)].map(city => [city, {
+      demand: 0, riders: 0, satisfaction: 0, walk: 0, withinDemand: 0, withinRiders: 0, withinWalk: 0,
+    }]));
   }
-  function project(sums, serviceKm, seatTrips) {
+  function shareOf(riders, demand, walk) {
+    return +(100 * riders / Math.max(1e-9, demand - walk)).toFixed(1);
+  }
+  function project(sums, serviceKm) {
     const passengerCount = Math.round(estimatedDemand * sums.riders / Math.max(1, sums.demandTotal));
+    const boardings = Math.round(estimatedDemand * sums.boardSum / Math.max(1, sums.demandTotal));
     const cityStats = Object.fromEntries(Object.entries(sums.local).map(([city, value]) => [city, {
       passengers: Math.round(estimatedDemand * value.riders / Math.max(1, sums.demandTotal)),
-      coverage: +(100 * value.riders / Math.max(1, value.demand)).toFixed(2),
-      satisfaction: +(value.satisfaction / Math.max(1, value.riders)).toFixed(2),
+      share: shareOf(value.riders, value.demand, value.walk),
+      withinShare: shareOf(value.withinRiders, value.withinDemand, value.withinWalk),
+      satisfaction: value.riders > 0 ? Math.round(value.satisfaction / value.riders) : 0,
     }]));
     const zoneStats = zoneIds.map((id, index) => ({
       id,
@@ -264,16 +277,61 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       demandPopulation: residentTotal,
       demandTrips: estimatedDemand,
       passengers: passengerCount,
-      satisfaction: +(sums.satisfaction / Math.max(1, sums.reachedWeight)).toFixed(2),
+      boardings,
+      share: shareOf(sums.riders, sums.demandTotal, sums.walkWeight),
+      calibrated: false,
+      asc: 0,
+      walkTrips: Math.round(estimatedDemand * sums.walkWeight / Math.max(1, sums.demandTotal)),
+      satisfaction: sums.reachedWeight > 0 ? Math.round(sums.satisfaction / sums.reachedWeight) : 0,
       wait: +(sums.waitTotal / Math.max(1, sums.reachedWeight)).toFixed(2),
       travel: +(sums.travelTotal / Math.max(1, sums.reachedWeight)).toFixed(2),
-      transfers: +(sums.transferTotal / Math.max(1, sums.reachedWeight)).toFixed(2),
-      load: Math.round(clamp(passengerCount / Math.max(1, seatTrips) * 100, 0, 150)),
+      transfers: +(sums.transferTotal / Math.max(1, sums.reachedWeight)).toFixed(1),
       cost: Math.round(serviceKm),
-      coverage: +(sums.riders / Math.max(1, sums.demandTotal) * 100).toFixed(2),
+      accessResidents: sums.accessResidents,
+      accessShare: +(100 * sums.accessResidents / Math.max(1, residentTotal)).toFixed(1),
       cityStats,
       zoneStats,
     };
+  }
+  function residentsNearRapid(stops, routes, daypart, stopIndex) {
+    const points = [];
+    const seen = new Uint8Array(stops.length);
+    for (const route of routes) {
+      if (route.mode !== 'tram' && route.mode !== 'rail' && route.mode !== 'metro') continue;
+      if (!resolveService(route, daypart).runs) continue;
+      for (const id of route.stopIds) {
+        const index = stopIndex.get(id);
+        if (index === undefined || seen[index]) continue;
+        seen[index] = 1;
+        points.push(stops[index].pos);
+      }
+    }
+    if (!points.length || !preparedZones) return 0;
+    const buckets = new Map();
+    const keyOf = (lon, lat) => `${Math.floor(lon / 0.015)}:${Math.floor(lat / 0.015)}`;
+    for (const pos of points) {
+      const key = keyOf(pos[0], pos[1]);
+      let bucket = buckets.get(key);
+      if (!bucket) buckets.set(key, bucket = []);
+      bucket.push(pos);
+    }
+    let residents = 0;
+    for (const zone of preparedZones) {
+      for (const cell of zone.cells) {
+        const x = Math.floor(cell.lon / 0.015);
+        const y = Math.floor(cell.lat / 0.015);
+        let near = false;
+        for (let dx = -1; dx <= 1 && !near; dx++) for (let dy = -1; dy <= 1 && !near; dy++) {
+          const bucket = buckets.get(`${x + dx}:${y + dy}`);
+          if (!bucket) continue;
+          for (let n = 0; n < bucket.length; n++) {
+            if (km(bucket[n], [cell.lon, cell.lat]) <= choice.rapidAccessKm) { near = true; break; }
+          }
+        }
+        if (near) residents += cell.population;
+      }
+    }
+    return Math.round(residents);
   }
   function calculate(network, customRoutes, customStops, overrides, daypart = 'peak', hooks = {}) {
     const started = performance.now();
@@ -282,7 +340,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const stopIndex = new Map(stops.map((stop, index) => [stop.id, index]));
     const stopCount = stops.length;
     const raw = [];
-    const link = (from, to, mins, wait, board, kind) => { raw.push(from, to, mins, wait, board, kind); };
+    const link = (from, to, gc, wait, board, kind, ivt, walk, alight) => { raw.push(from, to, gc, wait, board, kind, ivt, walk, alight); };
     const cells = new Map();
     const cellKey = (lon, lat) => `${Math.floor(lon / .003)}:${Math.floor(lat / .003)}`;
     for (let index = 0; index < stopCount; index++) {
@@ -306,8 +364,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
           if (dist > .34) continue;
           const sameArea = stop.area && stop.area === stops[other].area;
           const walk = sameArea ? 2 : 1.2 + dist / 4.5 * 60;
-          link(stopCount + index, 2 * stopCount + other, walk, 0, 0, K_WALK);
-          link(stopCount + other, 2 * stopCount + index, walk, 0, 0, K_WALK);
+          const walkGc = choice.walkWeight * walk;
+          link(stopCount + index, 2 * stopCount + other, walkGc, 0, 0, K_WALK, 0, walk, 0);
+          link(stopCount + other, 2 * stopCount + index, walkGc, 0, 0, K_WALK, 0, walk, 0);
         }
       }
     }
@@ -325,7 +384,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         ? clamp(ratio, 1.02, 1.6)
         : fallback;
     }
-    let serviceKm = 0, seatTrips = 0, nextNode = 3 * stopCount;
+    let serviceKm = 0, nextNode = 3 * stopCount;
     const canAlight = new Uint8Array(stopCount);
     for (const route of routes) {
       const sequence = [];
@@ -348,37 +407,38 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         nextNode += direction.length;
         const indexed = direction === sequence;
         const useTimes = indexed && !route.edited && Array.isArray(service.times) && service.times.length === sequence.length;
-        const waitMin = headway / 2;
+        const waitMin = waitMinutes(headway, choice);
+        const boardGc = choice.waitWeight * waitMin + choice.boardMinutes;
+        const transferGc = boardGc + choice.transferPenalty;
         let length = 0;
         for (let i = 0; i < direction.length; i++) {
           const stop = direction[i];
           const onboard = base + i;
           if (!indexed || !noBoard.has(i)) {
-            link(stop, onboard, waitMin + 1, waitMin, 1, K_BOARD);
-            link(stopCount + stop, onboard, waitMin + 1 + TRANSFER_PENALTY, waitMin, 1, K_TRANSFER);
-            link(2 * stopCount + stop, onboard, waitMin + 1 + TRANSFER_PENALTY, waitMin, 1, K_TRANSFER);
+            link(stop, onboard, boardGc, waitMin, 1, K_BOARD, 0, 0, 0);
+            link(stopCount + stop, onboard, transferGc, waitMin, 1, K_TRANSFER, 0, 0, 0);
+            link(2 * stopCount + stop, onboard, transferGc, waitMin, 1, K_TRANSFER, 0, 0, 0);
           }
-          if (!indexed || !noAlight.has(i)) { link(onboard, stopCount + stop, ALIGHT, 0, 0, K_ALIGHT); canAlight[stop] = 1; }
+          if (!indexed || !noAlight.has(i)) { link(onboard, stopCount + stop, choice.alightMinutes, 0, 0, K_ALIGHT, 0, 0, 1); canAlight[stop] = 1; }
           if (i < direction.length - 1 || ring) {
             const next = (i + 1) % direction.length;
             const distance = km(stops[stop].pos, stops[direction[next]].pos) * distanceFactor;
             length += distance;
             const ride = useTimes && next > i
-              ? Math.max(ALIGHT, service.times[next] - service.times[i])
+              ? Math.max(choice.alightMinutes, service.times[next] - service.times[i])
               : modes[route.mode].dwell + distance / cruiseSpeed[route.mode] * 60;
-            link(onboard, base + next, ride, 0, 0, K_RIDE);
+            link(onboard, base + next, ride, 0, 0, K_RIDE, ride, 0, 0);
           }
         }
         serviceKm += length * departures * rate[route.mode];
-        seatTrips += departures * seats[route.mode];
       }
     }
     const nodeCount = nextNode;
-    const edgeCount = raw.length / 6;
+    const edgeCount = raw.length / 9;
     // Full rebuild on each scenario. On the GZM snapshot this is about 20–50 ms,
     // under the 60 ms limit, so a static base graph plus an overflow block is unnecessary.
     const degree = new Uint32Array(nodeCount);
-    for (let i = 0; i < raw.length; i += 6) degree[raw[i]]++;
+    for (let i = 0; i < raw.length; i += 9) degree[raw[i]]++;
     const offset = new Uint32Array(nodeCount + 1);
     for (let i = 0; i < nodeCount; i++) offset[i + 1] = offset[i] + degree[i];
     const cursor = new Uint32Array(offset);
@@ -386,19 +446,25 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const edgeCost = new Float64Array(edgeCount);
     const edgeWait = new Float32Array(edgeCount);
     const edgeBoard = new Uint8Array(edgeCount);
-    const edgeKind = new Uint8Array(edgeCount);
-    for (let i = 0; i < raw.length; i += 6) {
+    const edgeIvt = new Float32Array(edgeCount);
+    const edgeWalk = new Float32Array(edgeCount);
+    const edgeAlight = new Uint8Array(edgeCount);
+    for (let i = 0; i < raw.length; i += 9) {
       const at = cursor[raw[i]]++;
       target[at] = raw[i + 1];
       edgeCost[at] = raw[i + 2];
       edgeWait[at] = raw[i + 3];
       edgeBoard[at] = raw[i + 4];
-      edgeKind[at] = raw[i + 5];
+      edgeIvt[at] = raw[i + 6];
+      edgeWalk[at] = raw[i + 7];
+      edgeAlight[at] = raw[i + 8];
     }
     const built = performance.now();
     const zoneStops = accessFor(network.stops, customStops, routes);
+    const accessResidents = residentsNearRapid(stops, routes, daypart, stopIndex);
     const sums = {
       demandTotal: 0, riders: 0, satisfaction: 0, waitTotal: 0, travelTotal: 0, transferTotal: 0, reachedWeight: 0,
+      walkWeight: 0, boardSum: 0, accessResidents,
       zoneFrom: Array(zones.length).fill(0), zoneTo: Array(zones.length).fill(0), zoneJourney: Array(zones.length).fill(0),
       local: blankLocal(),
     };
@@ -419,7 +485,10 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     for (let n = 0; n < targets.length; n++) isTarget[targets[n]] = 1;
     const dist = state.dist;
     const pathWait = state.wait;
+    const pathIvt = state.ivt;
+    const pathWalk = state.walk;
     const boards = state.boards;
+    const pathAlight = state.alights;
     const heapKeys = state.heapKeys;
     const heapVals = state.heapVals;
     const originStart = hooks.originStart || 0;
@@ -432,7 +501,10 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       if (hooks.onProgress && (origin - originStart) % progressStep === 0) hooks.onProgress((origin - originStart) / span);
       dist.fill(Infinity, 0, nodeCount);
       pathWait.fill(0, 0, nodeCount);
+      pathIvt.fill(0, 0, nodeCount);
+      pathWalk.fill(0, 0, nodeCount);
       boards.fill(0, 0, nodeCount);
+      pathAlight.fill(0, 0, nodeCount);
       let heapSize = 0;
       let remaining = targets.length;
       const originAccess = zoneStops[origin];
@@ -440,9 +512,11 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         const access = originAccess[n][1];
         const node = originAccess[n][0];
         if (node >= stopCount) continue;
-        if (access < dist[node]) {
-          dist[node] = access;
-          heapSize = heapPush(heapKeys, heapVals, heapSize, access, node);
+        const seeded = choice.walkWeight * access;
+        if (seeded < dist[node]) {
+          dist[node] = seeded;
+          pathWalk[node] = access;
+          heapSize = heapPush(heapKeys, heapVals, heapSize, seeded, node);
         }
       }
       while (heapSize) {
@@ -457,53 +531,73 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
           if (next + 1e-8 < dist[to]) {
             dist[to] = next;
             pathWait[to] = pathWait[at] + edgeWait[edge];
+            pathIvt[to] = pathIvt[at] + edgeIvt[edge];
+            pathWalk[to] = pathWalk[at] + edgeWalk[edge];
             boards[to] = boards[at] + edgeBoard[edge];
+            pathAlight[to] = pathAlight[at] + edgeAlight[edge];
             heapSize = heapPush(heapKeys, heapVals, heapSize, next, to);
           }
         }
       }
+      const originCity = zoneCities[origin];
+      const local = sums.local[originCity];
       for (let destination = 0; destination < zones.length; destination++) {
         if (origin === destination) continue;
         const straight = straightKm[origin][destination];
         const weight = originWeights[origin] * destinationWeights[destination] / (1 + straight / 6);
+        const destinationCity = zoneCities[destination];
+        const sameCity = originCity === destinationCity;
         sums.demandTotal += weight;
-        sums.local[zoneCities[origin]].demand += weight;
-        let best = Infinity, bestNode = -1;
+        local.demand += weight;
+        if (sameCity) local.withinDemand += weight;
+        if (straight < choice.walkExcludeKm) {
+          sums.walkWeight += weight;
+          local.walk += weight;
+          if (sameCity) local.withinWalk += weight;
+          continue;
+        }
+        let best = Infinity, bestNode = -1, bestEgress = 0;
         const access = zoneStops[destination];
         for (let n = 0; n < access.length; n++) {
           if (access[n][0] >= stopCount) continue;
           const node = stopCount + access[n][0];
-          const time = dist[node] + access[n][1];
-          if (time < best) { best = time; bestNode = node; }
+          const gc = dist[node] + choice.walkWeight * access[n][1];
+          if (gc < best) { best = gc; bestNode = node; bestEgress = access[n][1]; }
         }
         if (!Number.isFinite(best) || boards[bestNode] === 0) continue;
-        const reference = Math.max(8, straight / 28 * 60);
-        const share = clamp(1 / (1 + Math.exp((best - reference * 1.65 - 11) / 8)), 0, 1);
+        const gcCar = carMinutes(straight, zoneDensity[origin], zoneDensity[destination], choice);
+        const gap = choice.lambda * (best - gcCar);
+        const share = gap > 40 ? 0 : gap < -40 ? 1 : 1 / (1 + Math.exp(gap));
+        if (share <= 0) continue;
         const served = weight * share;
-        const score = clamp(93 - (best - reference) * .72, 8, 96);
+        const clock = pathIvt[bestNode] + pathWalk[bestNode] + bestEgress + pathWait[bestNode] + boards[bestNode] * choice.boardMinutes + pathAlight[bestNode] * choice.alightMinutes;
+        const score = 50 + 50 * Math.tanh((gcCar - best) / choice.satisfactionScale);
         sums.riders += served;
         sums.reachedWeight += served;
+        sums.boardSum += boards[bestNode] * served;
         sums.satisfaction += score * served;
-        sums.local[zoneCities[origin]].riders += served;
-        sums.local[zoneCities[origin]].satisfaction += score * served;
+        local.riders += served;
+        local.satisfaction += score * served;
+        if (sameCity) local.withinRiders += served;
         sums.waitTotal += pathWait[bestNode] * served;
-        sums.travelTotal += best * served;
+        sums.travelTotal += clock * served;
         sums.transferTotal += Math.max(0, boards[bestNode] - 1) * served;
         sums.zoneFrom[origin] += served;
         sums.zoneTo[destination] += served;
-        sums.zoneJourney[origin] += best * served;
+        sums.zoneJourney[origin] += clock * served;
       }
     }
     if (hooks.onProgress && !cancelled) hooks.onProgress(1);
     const finished = performance.now();
     lastTiming = { buildMs: +(built - started).toFixed(1), searchMs: +(finished - built).toFixed(1), nodes: nodeCount, edges: edgeCount };
     if (cancelled) return null;
-    if (hooks.partial) return { ...sums, serviceKm, seatTrips };
-    return project(sums, serviceKm, seatTrips);
+    if (hooks.partial) return { ...sums, serviceKm };
+    return project(sums, serviceKm);
   }
   function combinePartials(partials) {
     const total = {
       demandTotal: 0, riders: 0, satisfaction: 0, waitTotal: 0, travelTotal: 0, transferTotal: 0, reachedWeight: 0,
+      walkWeight: 0, boardSum: 0, accessResidents: partials[0].accessResidents || 0,
       local: blankLocal(),
     };
     for (const part of partials) {
@@ -514,10 +608,18 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       total.travelTotal += part.travelTotal;
       total.transferTotal += part.transferTotal;
       total.reachedWeight += part.reachedWeight;
+      total.walkWeight += part.walkWeight || 0;
+      total.boardSum += part.boardSum || 0;
       for (const city of Object.keys(part.local)) {
-        total.local[city].demand += part.local[city].demand;
-        total.local[city].riders += part.local[city].riders;
-        total.local[city].satisfaction += part.local[city].satisfaction;
+        const from = part.local[city];
+        const into = total.local[city];
+        into.demand += from.demand;
+        into.riders += from.riders;
+        into.satisfaction += from.satisfaction;
+        into.walk += from.walk || 0;
+        into.withinDemand += from.withinDemand || 0;
+        into.withinRiders += from.withinRiders || 0;
+        into.withinWalk += from.withinWalk || 0;
       }
       if (part.zoneFrom) {
         if (!total.zoneFrom) {
@@ -532,7 +634,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         }
       }
     }
-    return project(total, partials[0].serviceKm, partials[0].seatTrips);
+    return project(total, partials[0].serviceKm);
   }
   return { calculate, combinePartials, km, zones, zoneCities, resolveService, timing: () => lastTiming };
   }
