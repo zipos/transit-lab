@@ -1,5 +1,5 @@
-import en from './locales/en.json?v=2026-09-28-choice' with { type: 'json' };
-import pl from './locales/pl.json?v=2026-09-28-choice' with { type: 'json' };
+import en from './locales/en.json?v=2026-09-28-flows' with { type: 'json' };
+import pl from './locales/pl.json?v=2026-09-28-flows' with { type: 'json' };
 
 const catalogs = { en, pl };
 const listeners = new Set();

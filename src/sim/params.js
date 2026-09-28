@@ -21,6 +21,10 @@ export const choiceParams = {
   otherCarKmh: 40,
   satisfactionScale: 20,
   rapidAccessKm: 0.8,
+  peakHourShare: 0.1,
+  crowdAlpha: 0.6,
+  crowdBeta: 2,
+  crowdVc0: 0.8,
 };
 
 export function resolveChoice(overrides = {}) {
@@ -32,6 +36,11 @@ export function waitMinutes(headway, choice) {
   if (h <= choice.waitAwareHeadway) return h / 2;
   const atThreshold = choice.waitAwareHeadway / 2;
   return atThreshold + choice.waitLongFactor * (h - choice.waitAwareHeadway);
+}
+
+export function crowdMultiplier(volumeOverCapacity, choice = choiceParams) {
+  const excess = Math.max(0, volumeOverCapacity - choice.crowdVc0);
+  return 1 + choice.crowdAlpha * excess ** choice.crowdBeta;
 }
 
 export function carSpeed(density, choice) {

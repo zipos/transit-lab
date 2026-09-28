@@ -1004,6 +1004,12 @@ label {
 .fine-print { margin: 10px 0 0; }
 .inline-link { display: inline !important; min-height: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; color: #078d9b !important; font-size: inherit !important; text-decoration: underline; box-shadow: none !important; }
 .secondary-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-top: 9px; }
+.flow-results { margin-top: 12px; }
+.flow-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid rgba(38,61,80,.08); }
+.flow-row small, .flow-card .fine-print { display: block; }
+.load-bar { height: 6px; margin: 8px 0 4px; border-radius: 99px; background: rgba(38,61,80,.12); overflow: hidden; }
+.load-bar span { display: block; height: 100%; }
+.flow-card { margin: 8px 0 4px; }
 .secondary-stats span { padding: 7px 9px; border-radius: 8px; background: rgba(243,247,247,.9); color: #778696; font-size: 10px; }
 .secondary-stats b { color: #263d50; }
 .inspector-heading { margin: 3px 0 8px; font-family: Manrope,sans-serif; font-size: 22px; letter-spacing: -.05em; }

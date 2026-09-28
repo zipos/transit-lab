@@ -15,7 +15,14 @@ for (let index = 0; index < slices; index++) {
   const originEnd = Math.floor((index + 1) * zones / slices);
   partials.push(sim.calculate(network, [], [], {}, 'peak', { originStart, originEnd, partial: true }));
 }
-assert.deepEqual(sim.combinePartials(partials), full, 'origin slices add back to one full run');
+const merged = sim.combinePartials(partials);
+const { flows: mergedFlows, ...mergedRest } = merged;
+const { flows: fullFlows, ...fullRest } = full;
+assert.deepEqual(mergedRest, fullRest, 'origin slices add back to one full run');
+assert.ok(Math.abs(mergedFlows.boardingsTotal - fullFlows.boardingsTotal) <= 1);
+let flowGap = 0;
+for (let i = 0; i < fullFlows.segmentDaily.length; i++) flowGap = Math.max(flowGap, Math.abs(mergedFlows.segmentDaily[i] - fullFlows.segmentDaily[i]));
+assert.ok(flowGap <= 1, `segment flow slices differ by ${flowGap}`);
 
 let checks = 0;
 assert.equal(sim.calculate(network, [], [], {}, 'peak', { shouldContinue: () => ++checks < 2 }), null, 'a new revision stops at the next origin');

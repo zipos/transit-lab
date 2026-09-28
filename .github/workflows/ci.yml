@@ -60,6 +60,9 @@ jobs:
       - name: Run demand-zone audit
         run: node tests/zones-audit.mjs
 
+      - name: Run flow audit
+        run: node tests/flows-audit.mjs
+
       - name: Install Playwright and browser dependencies
         run: |
           npm install --no-save @playwright/test

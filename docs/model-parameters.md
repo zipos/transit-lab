@@ -42,3 +42,25 @@ Run on 28 September 2026 against `data/gzm` network `2026-09-23-gzm-v5`. ASC is 
 | Satisfaction | 10 | The formula, not a survey. A low score means the unweighted car alternative is faster in generalized minutes than weighted transit. |
 
 The gap versus 23.5% is expected. The constant is 0 on purpose. Destinations are still the housing proxy from brief 21, not workplaces. The survey is all purposes in 2018 for a subregion, and this model is a peak logit on a gravity matrix. Do not close the gap by editing `asc` here.
+
+## Flows and crowding (brief 24)
+
+Passenger totals do not change when vehicle capacity changes. Capacity is used only for volume/capacity. The published baseline has no fitted boarding constant, so flows stay unscaled and the panel says they are not calibrated.
+
+| Parameter | Value | Why |
+| --- | --- | --- |
+| `peakHourShare` | 0.10 | Assumption from brief 24. Peak-hour flow is the daily assigned flow times this share. Not taken from a counted peak profile. |
+| `crowdAlpha` / `crowdBeta` / `crowdVc0` | 0.6 / 2 / 0.8 | Assumptions from brief 24. A ride's generalized cost is multiplied by `1 + 0.6 × max(0, v/c − 0.8)²`. In-vehicle time itself is unchanged. |
+| Crowding iterations | 3 | The first result has no crowding. Two further searches use the method of successive averages, with weights 1/2 and 1/3 on the new flow. The replaced result is labeled refined. |
+
+Vehicle capacity is seats plus standing at 4 people per square metre. Standing places in Bujak, Bujak and Kucharski, *Sustainability* 2025, 17(13), 5835, Table 1, are at 5 people per square metre (0.2 m², the Polish rule cited in that paper). Standing is rescaled by 4/5. <https://www.mdpi.com/2071-1050/17/13/5835>
+
+| Mode in the model | Vehicle | Seats | Standing at 5/m² | Capacity at 4/m² |
+| --- | --- | ---: | ---: | ---: |
+| Bus | Solaris Urbino 12 LF electric | 28 | 50 | 68 |
+| Bus, not the default | Solaris Urbino 18 LF electric | 42 | 88 | 112 |
+| Tram | Pesa low-floor tram, 30 m | 40 | 175 | 180 |
+| Rail | Stadler Flirt, 3 cars | 154 | 252 | 356 |
+| Metro | Six-car metro | 244 | 940 | 996 |
+
+The live bus mode uses the 12 m figure. The articulated bus is recorded for a later vehicle-size control. A Solaris press figure of "up to 100" for the Urbino 12 electric is a weight limit, not this 4 people/m² capacity.

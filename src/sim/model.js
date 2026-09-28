@@ -110,6 +110,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         boards: new Uint16Array(nodeCap),
         alights: new Uint16Array(nodeCap),
         targets: new Uint8Array(nodeCap),
+        pred: new Int32Array(nodeCap),
         heapKeys: new Float64Array(cap),
         heapVals: new Int32Array(cap),
       };
@@ -255,6 +256,147 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       demand: 0, riders: 0, satisfaction: 0, walk: 0, withinDemand: 0, withinRiders: 0, withinWalk: 0,
     }]));
   }
+  function describeFlows(flow, demandTotal) {
+    const scale = estimatedDemand / Math.max(1, demandTotal || 1);
+    const exact = value => value * scale;
+    const roundFlow = value => Math.round(exact(value));
+    const segmentDaily = Float32Array.from(flow.segment, roundFlow);
+    let passengerKm = 0;
+    let overloaded = 0;
+    let boardingsTotal = 0;
+    let firstGap = 0;
+    const routes = {};
+    const stops = {};
+    const top = [];
+    const consider = item => {
+      if (!(item.vc > 0)) return;
+      top.push(item);
+      top.sort((a, b) => b.vc - a.vc);
+      if (top.length > 5) top.pop();
+    };
+    flow.patterns.forEach((pattern, index) => {
+      const riders = roundFlow(flow.patternBoard[index]);
+      const firstFlow = pattern.segments.length ? exact(flow.segment[pattern.offset]) : 0;
+      const firstBoardings = exact(flow.firstBoard[index]);
+      if (!pattern.ring && pattern.segments.length) {
+        const gap = Math.abs(firstFlow - firstBoardings) / Math.max(firstFlow, firstBoardings, 1);
+        if (gap > firstGap) firstGap = gap;
+      }
+      let best = null;
+      for (let s = 0; s < pattern.segments.length; s++) {
+        const daily = segmentDaily[pattern.offset + s];
+        const seg = pattern.segments[s];
+        const peak = daily * choice.peakHourShare;
+        const hourly = (60 / pattern.headway) * (modes[pattern.mode]?.capacity || 1);
+        const vc = hourly > 0 ? peak / hourly : 0;
+        passengerKm += daily * seg.km;
+        if (vc > 1) overloaded++;
+        const item = { routeId: pattern.routeId, fromId: seg.fromId, toId: seg.toId, fromName: seg.fromName, toName: seg.toName, daily, vc };
+        if (!best || vc > best.vc) best = item;
+        consider(item);
+      }
+      const prior = routes[pattern.routeId];
+      if (!prior) routes[pattern.routeId] = { riders, vc: best?.vc || 0, fromName: best?.fromName, toName: best?.toName, fromId: best?.fromId, toId: best?.toId };
+      else {
+        prior.riders += riders;
+        if (best && best.vc > prior.vc) Object.assign(prior, { vc: best.vc, fromName: best.fromName, toName: best.toName, fromId: best.fromId, toId: best.toId });
+      }
+    });
+    for (let i = 0; i < flow.boardings.length; i++) {
+      const boardings = roundFlow(flow.boardings[i]);
+      const transfers = roundFlow(flow.transfers[i]);
+      boardingsTotal += boardings;
+      if (boardings < 0.05 && transfers < 0.05) continue;
+      stops[flow.stopIds[i]] = { boardings, transfers };
+    }
+    const stopBoardings = Float32Array.from(flow.boardings, roundFlow);
+    const stopTransfers = Float32Array.from(flow.transfers, roundFlow);
+    return {
+      calibrated: false,
+      refined: false,
+      peakHourShare: choice.peakHourShare,
+      passengerKm: Math.round(passengerKm),
+      overloaded,
+      boardingsTotal: Math.round(boardingsTotal),
+      firstSegmentGap: +firstGap.toFixed(6),
+      segmentDaily,
+      stopBoardings,
+      stopTransfers,
+      stopIds: flow.stopIds,
+      patternRiders: Float32Array.from(flow.patternBoard, roundFlow),
+      layout: flow.patterns.map(pattern => ({
+        routeId: pattern.routeId,
+        mode: pattern.mode,
+        headway: pattern.headway,
+        offset: pattern.offset,
+        km: pattern.segments.map(segment => segment.km),
+        fromId: pattern.segments.map(segment => segment.fromId),
+        toId: pattern.segments.map(segment => segment.toId),
+        fromName: pattern.segments.map(segment => segment.fromName),
+        toName: pattern.segments.map(segment => segment.toName),
+      })),
+      routes,
+      stops,
+      top,
+    };
+  }
+  function presentFlows(stats, segmentDaily, stopBoardings, stopTransfers) {
+    const layout = stats.flows.layout;
+    const stopIds = stats.flows.stopIds;
+    let passengerKm = 0;
+    let overloaded = 0;
+    const routes = {};
+    const top = [];
+    const consider = item => {
+      if (!(item.vc > 1)) return;
+      top.push(item);
+      top.sort((a, b) => b.vc - a.vc);
+      if (top.length > 5) top.pop();
+    };
+    layout.forEach((pattern, index) => {
+      let best = null;
+      const riders = stats.flows.patternRiders?.[index] || 0;
+      for (let s = 0; s < pattern.km.length; s++) {
+        const daily = segmentDaily[pattern.offset + s];
+        const peak = daily * choice.peakHourShare;
+        const hourly = (60 / pattern.headway) * (modes[pattern.mode]?.capacity || 1);
+        const vc = hourly > 0 ? peak / hourly : 0;
+        passengerKm += daily * pattern.km[s];
+        if (vc > 1) overloaded++;
+        const item = { routeId: pattern.routeId, fromId: pattern.fromId[s], toId: pattern.toId[s], fromName: pattern.fromName[s], toName: pattern.toName[s], daily, vc };
+        if (!best || vc > best.vc) best = item;
+        consider(item);
+      }
+      const prior = routes[pattern.routeId];
+      if (!prior) routes[pattern.routeId] = { riders, vc: best?.vc || 0, fromName: best?.fromName, toName: best?.toName, fromId: best?.fromId, toId: best?.toId };
+      else {
+        prior.riders += riders;
+        if (best && best.vc > prior.vc) Object.assign(prior, { vc: best.vc, fromName: best.fromName, toName: best.toName, fromId: best.fromId, toId: best.toId });
+      }
+    });
+    const stops = {};
+    let boardingsTotal = 0;
+    for (let i = 0; i < stopBoardings.length; i++) {
+      boardingsTotal += stopBoardings[i];
+      if (stopBoardings[i] < 0.05 && stopTransfers[i] < 0.05) continue;
+      stops[stopIds[i]] = { boardings: stopBoardings[i], transfers: stopTransfers[i] };
+    }
+    return {
+      ...stats,
+      flows: {
+        ...stats.flows,
+        passengerKm,
+        overloaded,
+        boardingsTotal,
+        segmentDaily,
+        stopBoardings,
+        stopTransfers,
+        routes,
+        stops,
+        top,
+      },
+    };
+  }
   function shareOf(riders, demand, walk) {
     return +(100 * riders / Math.max(1e-9, demand - walk)).toFixed(1);
   }
@@ -291,6 +433,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       accessShare: +(100 * sums.accessResidents / Math.max(1, residentTotal)).toFixed(1),
       cityStats,
       zoneStats,
+      flows: sums.flow ? describeFlows(sums.flow, sums.demandTotal) : null,
     };
   }
   function residentsNearRapid(stops, routes, daypart, stopIndex) {
@@ -340,7 +483,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const stopIndex = new Map(stops.map((stop, index) => [stop.id, index]));
     const stopCount = stops.length;
     const raw = [];
-    const link = (from, to, gc, wait, board, kind, ivt, walk, alight) => { raw.push(from, to, gc, wait, board, kind, ivt, walk, alight); };
+    const link = (from, to, gc, wait, board, kind, ivt, walk, alight, pattern = -1, segment = -1, stopRef = -1) => {
+      raw.push(from, to, gc, wait, board, kind, ivt, walk, alight, pattern, segment, stopRef);
+    };
     const cells = new Map();
     const cellKey = (lon, lat) => `${Math.floor(lon / .003)}:${Math.floor(lat / .003)}`;
     for (let index = 0; index < stopCount; index++) {
@@ -385,6 +530,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         : fallback;
     }
     let serviceKm = 0, nextNode = 3 * stopCount;
+    const flowPatterns = [];
+    const segmentScale = hooks.segmentScale;
+    let segmentCursor = 0;
     const canAlight = new Uint8Array(stopCount);
     for (const route of routes) {
       const sequence = [];
@@ -410,54 +558,86 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         const waitMin = waitMinutes(headway, choice);
         const boardGc = choice.waitWeight * waitMin + choice.boardMinutes;
         const transferGc = boardGc + choice.transferPenalty;
+        const patternIndex = flowPatterns.length;
+        const segments = [];
         let length = 0;
         for (let i = 0; i < direction.length; i++) {
           const stop = direction[i];
           const onboard = base + i;
           if (!indexed || !noBoard.has(i)) {
-            link(stop, onboard, boardGc, waitMin, 1, K_BOARD, 0, 0, 0);
-            link(stopCount + stop, onboard, transferGc, waitMin, 1, K_TRANSFER, 0, 0, 0);
-            link(2 * stopCount + stop, onboard, transferGc, waitMin, 1, K_TRANSFER, 0, 0, 0);
+            link(stop, onboard, boardGc, waitMin, 1, K_BOARD, 0, 0, 0, -1, -1, stop);
+            link(stopCount + stop, onboard, transferGc, waitMin, 1, K_TRANSFER, 0, 0, 0, -1, -1, stop);
+            link(2 * stopCount + stop, onboard, transferGc, waitMin, 1, K_TRANSFER, 0, 0, 0, -1, -1, stop);
           }
-          if (!indexed || !noAlight.has(i)) { link(onboard, stopCount + stop, choice.alightMinutes, 0, 0, K_ALIGHT, 0, 0, 1); canAlight[stop] = 1; }
+          if (!indexed || !noAlight.has(i)) { link(onboard, stopCount + stop, choice.alightMinutes, 0, 0, K_ALIGHT, 0, 0, 1, -1, -1, stop); canAlight[stop] = 1; }
           if (i < direction.length - 1 || ring) {
             const next = (i + 1) % direction.length;
-            const distance = km(stops[stop].pos, stops[direction[next]].pos) * distanceFactor;
+            const nextStop = direction[next];
+            const distance = km(stops[stop].pos, stops[nextStop].pos) * distanceFactor;
             length += distance;
             const ride = useTimes && next > i
               ? Math.max(choice.alightMinutes, service.times[next] - service.times[i])
               : modes[route.mode].dwell + distance / cruiseSpeed[route.mode] * 60;
-            link(onboard, base + next, ride, 0, 0, K_RIDE, ride, 0, 0);
+            const segment = segments.length;
+            const scale = segmentScale ? (segmentScale[segmentCursor + segment] || 1) : 1;
+            link(onboard, base + next, ride * scale, 0, 0, K_RIDE, ride, 0, 0, patternIndex, segment, -1);
+            segments.push({
+              km: distance,
+              fromId: stops[stop].id,
+              toId: stops[nextStop].id,
+              fromName: stops[stop].name,
+              toName: stops[nextStop].name,
+            });
           }
         }
+        flowPatterns.push({
+          routeId: route.id,
+          mode: route.mode,
+          headway,
+          ring,
+          firstStop: direction[0],
+          offset: segmentCursor,
+          segments,
+        });
+        segmentCursor += segments.length;
         serviceKm += length * departures * rate[route.mode];
       }
     }
     const nodeCount = nextNode;
-    const edgeCount = raw.length / 9;
+    const edgeCount = raw.length / 12;
     // Full rebuild on each scenario. On the GZM snapshot this is about 20–50 ms,
     // under the 60 ms limit, so a static base graph plus an overflow block is unnecessary.
     const degree = new Uint32Array(nodeCount);
-    for (let i = 0; i < raw.length; i += 9) degree[raw[i]]++;
+    for (let i = 0; i < raw.length; i += 12) degree[raw[i]]++;
     const offset = new Uint32Array(nodeCount + 1);
     for (let i = 0; i < nodeCount; i++) offset[i + 1] = offset[i] + degree[i];
     const cursor = new Uint32Array(offset);
     const target = new Int32Array(edgeCount);
+    const edgeFrom = new Int32Array(edgeCount);
     const edgeCost = new Float64Array(edgeCount);
     const edgeWait = new Float32Array(edgeCount);
     const edgeBoard = new Uint8Array(edgeCount);
+    const edgeKind = new Uint8Array(edgeCount);
     const edgeIvt = new Float32Array(edgeCount);
     const edgeWalk = new Float32Array(edgeCount);
     const edgeAlight = new Uint8Array(edgeCount);
-    for (let i = 0; i < raw.length; i += 9) {
+    const edgePattern = new Int32Array(edgeCount);
+    const edgeSegment = new Int32Array(edgeCount);
+    const edgeStop = new Int32Array(edgeCount);
+    for (let i = 0; i < raw.length; i += 12) {
       const at = cursor[raw[i]]++;
+      edgeFrom[at] = raw[i];
       target[at] = raw[i + 1];
       edgeCost[at] = raw[i + 2];
       edgeWait[at] = raw[i + 3];
       edgeBoard[at] = raw[i + 4];
+      edgeKind[at] = raw[i + 5];
       edgeIvt[at] = raw[i + 6];
       edgeWalk[at] = raw[i + 7];
       edgeAlight[at] = raw[i + 8];
+      edgePattern[at] = raw[i + 9];
+      edgeSegment[at] = raw[i + 10];
+      edgeStop[at] = raw[i + 11];
     }
     const built = performance.now();
     const zoneStops = accessFor(network.stops, customStops, routes);
@@ -465,6 +645,15 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const sums = {
       demandTotal: 0, riders: 0, satisfaction: 0, waitTotal: 0, travelTotal: 0, transferTotal: 0, reachedWeight: 0,
       walkWeight: 0, boardSum: 0, accessResidents,
+      flow: {
+        segment: new Float32Array(segmentCursor),
+        boardings: new Float32Array(stopCount),
+        transfers: new Float32Array(stopCount),
+        patternBoard: new Float32Array(flowPatterns.length),
+        firstBoard: new Float32Array(flowPatterns.length),
+        patterns: flowPatterns,
+        stopIds: stops.map(stop => stop.id),
+      },
       zoneFrom: Array(zones.length).fill(0), zoneTo: Array(zones.length).fill(0), zoneJourney: Array(zones.length).fill(0),
       local: blankLocal(),
     };
@@ -489,6 +678,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const pathWalk = state.walk;
     const boards = state.boards;
     const pathAlight = state.alights;
+    const pred = state.pred;
     const heapKeys = state.heapKeys;
     const heapVals = state.heapVals;
     const originStart = hooks.originStart || 0;
@@ -505,6 +695,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       pathWalk.fill(0, 0, nodeCount);
       boards.fill(0, 0, nodeCount);
       pathAlight.fill(0, 0, nodeCount);
+      pred.fill(-1, 0, nodeCount);
       let heapSize = 0;
       let remaining = targets.length;
       const originAccess = zoneStops[origin];
@@ -535,6 +726,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
             pathWalk[to] = pathWalk[at] + edgeWalk[edge];
             boards[to] = boards[at] + edgeBoard[edge];
             pathAlight[to] = pathAlight[at] + edgeAlight[edge];
+            pred[to] = edge;
             heapSize = heapPush(heapKeys, heapVals, heapSize, next, to);
           }
         }
@@ -570,6 +762,30 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         const share = gap > 40 ? 0 : gap < -40 ? 1 : 1 / (1 + Math.exp(gap));
         if (share <= 0) continue;
         const served = weight * share;
+        let node = bestNode;
+        let ridePattern = -1;
+        let expectFirst = -1;
+        for (let guard = 0; guard < 256 && node >= 0; guard++) {
+          const edge = pred[node];
+          if (edge < 0) break;
+          const kind = edgeKind[edge];
+          if (kind === K_RIDE) {
+            const pattern = edgePattern[edge];
+            const segment = edgeSegment[edge];
+            sums.flow.segment[flowPatterns[pattern].offset + segment] += served;
+            ridePattern = pattern;
+            expectFirst = segment === 0 ? pattern : -1;
+          } else if (kind === K_BOARD || kind === K_TRANSFER) {
+            const stop = edgeStop[edge];
+            sums.flow.boardings[stop] += served;
+            if (kind === K_TRANSFER) sums.flow.transfers[stop] += served;
+            if (ridePattern >= 0) sums.flow.patternBoard[ridePattern] += served;
+            if (expectFirst >= 0 && stop === flowPatterns[expectFirst].firstStop) sums.flow.firstBoard[expectFirst] += served;
+            ridePattern = -1;
+            expectFirst = -1;
+          }
+          node = edgeFrom[edge];
+        }
         const clock = pathIvt[bestNode] + pathWalk[bestNode] + bestEgress + pathWait[bestNode] + boards[bestNode] * choice.boardMinutes + pathAlight[bestNode] * choice.alightMinutes;
         const score = 50 + 50 * Math.tanh((gcCar - best) / choice.satisfactionScale);
         sums.riders += served;
@@ -610,6 +826,25 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       total.reachedWeight += part.reachedWeight;
       total.walkWeight += part.walkWeight || 0;
       total.boardSum += part.boardSum || 0;
+      if (part.flow) {
+        if (!total.flow) {
+          total.flow = {
+            segment: Float32Array.from(part.flow.segment),
+            boardings: Float32Array.from(part.flow.boardings),
+            transfers: Float32Array.from(part.flow.transfers),
+            patternBoard: Float32Array.from(part.flow.patternBoard),
+            firstBoard: Float32Array.from(part.flow.firstBoard),
+            patterns: part.flow.patterns,
+            stopIds: part.flow.stopIds,
+          };
+        } else {
+          for (let i = 0; i < part.flow.segment.length; i++) total.flow.segment[i] += part.flow.segment[i];
+          for (let i = 0; i < part.flow.boardings.length; i++) total.flow.boardings[i] += part.flow.boardings[i];
+          for (let i = 0; i < part.flow.transfers.length; i++) total.flow.transfers[i] += part.flow.transfers[i];
+          for (let i = 0; i < part.flow.patternBoard.length; i++) total.flow.patternBoard[i] += part.flow.patternBoard[i];
+          for (let i = 0; i < part.flow.firstBoard.length; i++) total.flow.firstBoard[i] += part.flow.firstBoard[i];
+        }
+      }
       for (const city of Object.keys(part.local)) {
         const from = part.local[city];
         const into = total.local[city];
@@ -636,6 +871,6 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     }
     return project(total, partials[0].serviceKm);
   }
-  return { calculate, combinePartials, km, zones, zoneCities, resolveService, timing: () => lastTiming };
+  return { calculate, combinePartials, presentFlows, km, zones, zoneCities, resolveService, timing: () => lastTiming };
   }
 export { createModel, km };

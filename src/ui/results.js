@@ -1,5 +1,5 @@
 import { html, raw } from '../html.js';
-import { t, fmtDecimal } from '../i18n/index.js?v=2026-09-28-choice';
+import { t, fmtDecimal } from '../i18n/index.js?v=2026-09-28-flows';
 
 export function renderResults(ctx) {
   const { $, state, format, compactMillions, region, maybeStartIntro } = ctx;
@@ -54,5 +54,17 @@ export function renderResults(ctx) {
   const original = baseline?.cityStats?.[state.resultCity];
   $('local-results').innerHTML = html`<label>${t('results.local')}<select id="result-city">${raw(cities.map(city => html`<option value="${city}" ${raw(city === state.resultCity ? 'selected' : '')}>${city}</option>`).join(''))}</select></label><div class="local-results-grid"><span><b>${format(local?.passengers || 0)}</b> ${t('results.localTrips')} <small>${original ? delta(local.passengers, original.passengers) : ''}</small></span><span><b>${local?.passengers ? format(local.satisfaction) : '—'}</b> ${t('results.localSatisfaction')} <small>${original && local?.passengers ? delta(local.satisfaction, original.satisfaction, ` ${t('results.pts')}`) : ''}</small></span><span><b>${local?.withinShare != null ? fmtDecimal(local.withinShare, 1) : '—'}%</b> ${t('results.withinShare')} <small>${original ? delta(Math.round(local.withinShare), Math.round(original.withinShare), ` ${t('results.pts')}`) : ''}</small></span></div>`;
   $('result-city').onchange = event => { state.resultCity = event.target.value; renderResults(ctx); };
+  const flows = stats.flows;
+  const overloaded = (flows?.top || []).filter(item => item.vc > 1).slice(0, 5);
+  const label = flows?.refined ? t('results.refined') : flows?.refining ? t('results.refining') : t('results.notCalibrated');
+  const rows = !flows
+    ? html`<p class="fine-print">${t('results.flowPending')}</p>`
+    : overloaded.length
+      ? overloaded.map(item => html`<div class="flow-row"><span><b>${item.fromName} → ${item.toName}</b><small>${t('results.overloadedItem', { load: format(Math.round(item.vc * 100)) })}</small></span><button type="button" data-flow-route="${item.routeId}" data-flow-from="${item.fromId}" data-flow-to="${item.toId}">${t('results.showOnMap')}</button></div>`).join('')
+      : html`<p class="fine-print">${t('results.overloadedNone')}</p>`;
+  $('flow-results').innerHTML = html`<div class="section-title"><h3>${t('results.overloaded')}</h3><span class="value">${label}</span></div>${raw(rows)}`;
+  $('flow-results').querySelectorAll('[data-flow-route]').forEach(button => {
+    button.onclick = () => ctx.focusFlow(button.dataset.flowRoute, button.dataset.flowFrom, button.dataset.flowTo);
+  });
   maybeStartIntro();
 }

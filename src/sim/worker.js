@@ -1,4 +1,4 @@
-import { createModel } from './model.js?v=2026-09-28-choice';
+import { createModel } from './model.js?v=2026-09-28-flows';
 
 let model;
 const sliceBaseline = new Map();
@@ -15,6 +15,7 @@ export function runJob(data, postMessage) {
       originStart: data.originStart || 0,
       originEnd: partial ? data.originEnd : undefined,
       partial,
+      segmentScale: data.segmentScale,
       shouldContinue: data.trackRevision ? live : undefined,
       onProgress: (fraction) => postMessage({ revision: data.revision, progress: fraction, workerIndex: data.workerIndex ?? 0 }),
     };
@@ -25,7 +26,8 @@ export function runJob(data, postMessage) {
         : (sliceBaseline.get(daypart) || sliceBaseline.set(daypart, model.calculate(model.network, [], [], {}, daypart)).get(daypart));
       const stats = model.calculate(model.network, data.customRoutes, data.customStops, data.overrides, daypart, hooks);
       if (!stats || !live()) return;
-      postMessage({ revision: data.revision, baseline, stats, compareId: data.compareId || null });
+      const buffers = [];
+      postMessage({ revision: data.revision, baseline: packFlow(baseline, buffers), stats: packFlow(stats, buffers), compareId: data.compareId || null, refine: !!data.refine }, buffers);
       return;
     }
     const quiet = { ...hooks, onProgress: undefined };
@@ -45,15 +47,18 @@ export function runJob(data, postMessage) {
     if (!live()) return;
     const stats = model.calculate(model.network, data.customRoutes, data.customStops, data.overrides, daypart, hooks);
     if (!stats || !compare && data.compare || !live()) return;
+    const buffers = [];
+    const workerIndex = data.workerIndex ?? 0;
     postMessage({
       revision: data.revision,
-      baseline,
-      stats,
-      compare,
+      baseline: packFlow(baseline, buffers, workerIndex),
+      stats: packFlow(stats, buffers, workerIndex),
+      compare: packFlow(compare, buffers, workerIndex),
       compareId: data.compareId || null,
       partial: true,
-      workerIndex: data.workerIndex ?? 0,
-    });
+      refine: !!data.refine,
+      workerIndex,
+    }, buffers);
   };
   if (model) { finish(); return; }
   const ready = (network, population) => {
@@ -66,6 +71,22 @@ export function runJob(data, postMessage) {
     fetch(data.networkUrl).then(response => response.json()),
     fetch(data.populationUrl).then(response => response.json()),
   ]).then(([network, population]) => ready(network, population));
+}
+
+function packFlow(stats, buffers, workerIndex = 0) {
+  if (!stats?.flow) return stats;
+  const flow = { ...stats.flow };
+  if (workerIndex > 0) {
+    flow.patterns = null;
+    flow.stopIds = null;
+  }
+  for (const key of ['segment', 'boardings', 'transfers', 'patternBoard', 'firstBoard']) {
+    if (!flow[key]) continue;
+    const copy = flow[key].slice();
+    flow[key] = copy;
+    buffers.push(copy.buffer);
+  }
+  return { ...stats, flow };
 }
 
 export function acceptJob(data, postMessage) {

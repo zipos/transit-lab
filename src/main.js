@@ -1,16 +1,17 @@
 import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-engine';
-import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-choice';
-import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-choice';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-flows';
+import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-flows';
+import { choiceParams, crowdMultiplier } from './sim/params.js?v=2026-09-28-flows';
 import { minify, expand, bytesToBase64Url, base64UrlToBytes, compressJson, decompressJson, shareUrl } from './share.js?v=2026-09-28-share2';
 import { createSlot, activateSlot, duplicateSlot, renameSlot, deleteSlot, slotLimit } from './slots.js?v=2026-09-28-share2';
 import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js?v=2026-09-28-share2';
-import { colors, cruiseSpeed } from './modes.js?v=2026-09-28-share2';
+import { colors, cruiseSpeed, capacity } from './modes.js?v=2026-09-28-flows';
 import { groupLines } from './lines.js?v=2026-09-28-share2';
 import { renderRouteList } from './ui/list.js?v=2026-09-28-share2';
 import { renderDraftInspector } from './ui/draft.js?v=2026-09-28-share2';
-import { renderStopInspector } from './ui/inspector-stop.js?v=2026-09-28-share2';
-import { renderLineInspector } from './ui/inspector-line.js?v=2026-09-28-share2';
-import { renderResults } from './ui/results.js?v=2026-09-28-choice';
+import { renderStopInspector } from './ui/inspector-stop.js?v=2026-09-28-flows';
+import { renderLineInspector } from './ui/inspector-line.js?v=2026-09-28-flows';
+import { renderResults } from './ui/results.js?v=2026-09-28-flows';
 import { createModal } from './ui/modal.js?v=2026-09-28-share2';
 
 window.TransitScenario = { normalize, safeUrl: scenarioSafeUrl, safeColor };
@@ -189,7 +190,10 @@ async function startApp() {
   }
   function currentScenario() { return { ...JSON.parse(snapshot()), daypart: state.daypart, region: region.id, networkVersion: network.version, challenge: state.challenge || null }; }
   function summaryFrom(stats) {
-    return stats ? { passengers: stats.passengers, cost: stats.cost, modelVersion, networkVersion: network.version, stats } : null;
+    if (!stats) return null;
+    const stored = { ...stats };
+    delete stored.flows;
+    return { passengers: stored.passengers, cost: stored.cost, modelVersion, networkVersion: network.version, stats: stored };
   }
   function persist() {
     if (state.sharePreview) return;
@@ -862,6 +866,14 @@ async function startApp() {
     setMobileView('line'); if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false);
     setPanel('inspector', true); renderList(); renderInspector(); renderSelection();
   }
+  function focusFlow(routeId, fromId, toId) {
+    selectRoute(routeId);
+    const from = stop(fromId);
+    const to = stop(toId);
+    if (!from || !to) return;
+    const bounds = new maplibregl.LngLatBounds(from.pos, to.pos);
+    map.fitBounds(bounds, { padding: fitPadding(), maxZoom: 15, duration: 650 });
+  }
   function selectRoute(id, options = {}) {
     const nextLine = lineFor(id);
     if (nextLine?.key !== lineFor(state.selected)?.key) state.lineIntervalOnly = false;
@@ -952,7 +964,48 @@ async function startApp() {
   function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderSelection(); renderDraft(); toast(t('toast.place')); }
 
   let statsPool = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
-  let sliceArrivals = [], sliceProgress = [];
+  let sliceArrivals = [], sliceProgress = [], lastScenario = null, refineState = null;
+  function mixFlows(prev, next, iteration) {
+    const out = new Float32Array(prev.length);
+    const weight = 1 / iteration;
+    for (let i = 0; i < out.length; i++) out[i] = (1 - weight) * prev[i] + weight * next[i];
+    return out;
+  }
+  function crowdScales(daily, layout) {
+    const scale = new Float32Array(daily.length);
+    scale.fill(1);
+    for (const pattern of layout) {
+      const hourly = (60 / pattern.headway) * (capacity[pattern.mode] || 1);
+      for (let s = 0; s < pattern.km.length; s++) {
+        const vc = hourly > 0 ? daily[pattern.offset + s] * choiceParams.peakHourShare / hourly : 0;
+        scale[pattern.offset + s] = crowdMultiplier(vc);
+      }
+    }
+    return scale;
+  }
+  function postRefine() {
+    if (workerUnavailable || !refineState || refineState.revision !== statsRevision || refineState.iteration >= 3) {
+      refineState = null;
+      return;
+    }
+    const job = { ...refineState.scenario, segmentScale: crowdScales(refineState.daily, state.stats.flows.layout), refine: true };
+    if (statsBusy) return;
+    postSlices(job);
+  }
+  function beginRefine(scenario, stats) {
+    if (!scenario || !stats?.flows?.layout || !stats.flows.segmentDaily) return;
+    refineState = {
+      revision: scenario.revision,
+      scenario,
+      iteration: 1,
+      daily: stats.flows.segmentDaily.slice(),
+      board: stats.flows.stopBoardings.slice(),
+      xfer: stats.flows.stopTransfers.slice(),
+      riders: stats.flows.patternRiders.slice(),
+      started: performance.now(),
+    };
+    postRefine();
+  }
   function scheduleStats() {
     statsRevision++;
     clearTimeout(recomputeTimer); recomputeTimer = setTimeout(recomputeStats, 35);
@@ -1005,10 +1058,13 @@ async function startApp() {
       renderStats();
     }
     if (pendingStats) {
+      refineState = null;
       const next = pendingStats;
       pendingStats = null;
       postSlices(next);
+      return;
     }
+    if (data.revision === statsRevision && data.stats?.flows && !data.refine) beginRefine(lastScenario, data.stats);
   }
   function onPoolMessage(data) {
     if (typeof data.progress === 'number') {
@@ -1021,6 +1077,33 @@ async function startApp() {
     if (data.revision !== statsRevision || !data.partial) return;
     sliceArrivals[data.workerIndex] = data;
     if (sliceArrivals.some(item => !item)) return;
+    if (sliceArrivals[0].refine && refineState && data.revision === refineState.revision) {
+      statsBusy = false;
+      showProgress(0, false);
+      const assigned = sim.combinePartials(sliceArrivals.map(item => item.stats));
+      refineState.iteration += 1;
+      refineState.daily = mixFlows(refineState.daily, assigned.flows.segmentDaily, refineState.iteration);
+      refineState.board = mixFlows(refineState.board, assigned.flows.stopBoardings, refineState.iteration);
+      refineState.xfer = mixFlows(refineState.xfer, assigned.flows.stopTransfers, refineState.iteration);
+      refineState.riders = mixFlows(refineState.riders, assigned.flows.patternRiders, refineState.iteration);
+      const merged = { ...assigned, flows: { ...assigned.flows, patternRiders: refineState.riders, layout: state.stats.flows.layout, stopIds: state.stats.flows.stopIds } };
+      state.stats = sim.presentFlows(merged, refineState.daily, refineState.board, refineState.xfer);
+      state.stats.flows.refining = refineState.iteration < 3;
+      state.stats.flows.refined = refineState.iteration >= 3;
+      if (state.stats.flows.refined) state.stats.flows.refineMs = Math.round(performance.now() - refineState.started);
+      renderStats();
+      renderInspector();
+      if (pendingStats) {
+        refineState = null;
+        const next = pendingStats;
+        pendingStats = null;
+        postSlices(next);
+        return;
+      }
+      if (refineState.iteration >= 3) refineState = null;
+      else postRefine();
+      return;
+    }
     const stats = sim.combinePartials(sliceArrivals.map(item => item.stats));
     const compared = sliceArrivals[0].compare ? sim.combinePartials(sliceArrivals.map(item => item.compare)) : null;
     const published = sliceArrivals[0].baseline ? sim.combinePartials(sliceArrivals.map(item => item.baseline)) : shippedPeak();
@@ -1031,7 +1114,7 @@ async function startApp() {
     if (statsPool?.length === count) return statsPool;
     statsPool?.forEach(worker => worker.terminate());
     statsPool = Array.from({ length: count }, () => {
-      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-choice`, import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-flows`, import.meta.url), { type: 'module' });
       worker.onmessage = ({ data }) => onPoolMessage(data);
       worker.onerror = () => {
         statsPool?.forEach(item => item.terminate());
@@ -1063,10 +1146,6 @@ async function startApp() {
     const cachedCompare = comparison?.summary?.stats && comparison.summary.modelVersion === modelVersion && comparison.summary.networkVersion === network.version ? comparison.summary.stats : null;
     const untouched = !state.customRoutes.length && !state.customStops.length && !Object.keys(state.overrides).length;
     const shipped = shippedPeak();
-    if (shipped && state.daypart === 'peak' && untouched && !comparison) {
-      applyWorkerResult({ revision, stats: shipped, baseline: shipped, compareId: null });
-      return;
-    }
     const scenario = {
       revision,
       customRoutes: state.customRoutes,
@@ -1080,6 +1159,11 @@ async function startApp() {
       compare: cachedCompare || !comparison ? null : comparison.scenario,
       skipBaseline: state.daypart === 'peak' && !!shipped,
     };
+    lastScenario = scenario;
+    refineState = null;
+    if (shipped && state.daypart === 'peak' && untouched && !comparison) {
+      applyWorkerResult({ revision, stats: { ...shipped }, baseline: shipped, compareId: null });
+    }
     if (!workerUnavailable) {
       try {
         if (statsBusy) pendingStats = scenario;
@@ -1098,6 +1182,7 @@ async function startApp() {
       state.stats = sim.calculate(network, scenario.customRoutes, scenario.customStops, scenario.overrides, state.daypart);
       showProgress(0, false);
       renderStats();
+      beginRefine(scenario, state.stats);
     }, 15);
   }
 
@@ -1644,7 +1729,7 @@ async function startApp() {
     if (isDebug) window.__DEBUG__.lastVehicleCount = lastVehicleCount;
     setSourceData('vehicles', featureCollection(features));
   }
-  Object.assign(ctx, { $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, remember, changed, toast, map, enterMetroTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry });
+  Object.assign(ctx, { $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, focusFlow, remember, changed, toast, map, enterMetroTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry });
   renderTemplates(); renderList(); renderInspector();
   document.addEventListener('pointerdown', e => {
     if (intro.active && intro.index === 0) return;

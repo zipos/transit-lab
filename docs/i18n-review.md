@@ -76,6 +76,24 @@ Draft Polish. The share is explicitly not calibrated.
 - {{share}}% w 800 m od tramwaju lub kolei
 - udział wewnątrz tej gminy
 
+## Flows and crowding (brief 24)
+
+Draft Polish.
+
+- Odcinki przeładowane
+- {{load}}% w szczycie
+- Żaden odcinek nie przekracza pojemności w godzinie szczytu.
+- Pokaż na mapie
+- Doprecyzowane
+- Doprecyzowanie
+- Przypisywanie pasażerów…
+- pasażerów na dobę
+- Obciążenie w szczycie {{load}}%
+- Najbardziej obciążony odcinek: {{from}} → {{to}}
+- Przepływy są jeszcze liczone.
+- wsiadań na dobę
+- przesiadek na dobę
+
 ## Simulation progress (brief 20)
 
 - Przeliczanie
