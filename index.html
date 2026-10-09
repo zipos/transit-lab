@@ -8,10 +8,10 @@
   <meta name="description" content="A public transport sandbox. Edit real lines and draw new routes.">
   <title>Transit Lab</title>
   <link rel="stylesheet" href="./vendor/maplibre-gl.css">
-  <link rel="stylesheet" href="./styles.css?v=2026-10-09-budget">
+  <link rel="stylesheet" href="./styles.css?v=2026-10-09-shell">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <script defer src="./vendor/maplibre-gl.js"></script>
-  <script type="module" src="./src/main.js?v=2026-10-09-budget"></script>
+  <script type="module" src="./src/main.js?v=2026-10-09-shell"></script>
 </head>
 <body>
   <main id="map" aria-label="Map"></main>
@@ -24,8 +24,8 @@
       <span class="top-caption"></span>
       <div class="locale-switch" role="group" data-i18n-aria="locale.label" aria-label="Language"><button type="button" data-locale="pl" aria-pressed="false">PL</button><button type="button" data-locale="en" aria-pressed="false">EN</button></div>
       <button id="guide-button" data-i18n="top.guide" data-i18n-title="top.guideTitle" title="How to play">Guide</button>
-      <button id="fullscreen-button" type="button" title="Toggle fullscreen (F)" data-i18n-aria="top.enterFullscreen" aria-label="Enter fullscreen">⛶ <span class="fullscreen-text" data-i18n="top.fullscreen">Fullscreen</span></button>
-      <button id="settings-button" type="button" data-i18n-title="top.settingsTitle" title="Display settings">⚙ <span data-i18n="top.settings">Settings</span></button>
+      <button id="fullscreen-button" type="button" title="Toggle fullscreen (F)" data-i18n-aria="top.enterFullscreen" aria-label="Enter fullscreen"><span class="ico" aria-hidden="true">⛶</span><span class="label" data-i18n="top.fullscreen">Fullscreen</span></button>
+      <button id="settings-button" type="button" data-i18n-title="top.settingsTitle" title="Display settings"><span class="ico" aria-hidden="true">⚙</span><span class="label" data-i18n="top.settings">Settings</span></button>
       <button id="share-button" data-i18n="top.share" data-i18n-title="top.shareTitle" title="Copy a share link">Share</button>
       <button id="slots-button" data-i18n="top.slots" data-i18n-title="top.slotsTitle" title="Saved plans">Plans</button>
       <button id="export-button" data-i18n="top.export" data-i18n-title="top.exportTitle" title="Export your network as JSON">Export</button>

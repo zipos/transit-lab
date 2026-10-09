@@ -1,5 +1,5 @@
 import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-engine';
-import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-10-09-budget';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-10-09-shell';
 import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-10-09-challenges';
 import { choiceParams, crowdMultiplier } from './sim/params.js?v=2026-09-28-flows';
 import { summarizeBudget, capitalCosts } from './sim/budget.js?v=2026-10-09-budget';
@@ -246,7 +246,7 @@ async function startApp() {
   function renderFullscreen() {
     const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
     $('fullscreen-button').hidden = !showFullscreenButton && !active;
-    $('fullscreen-button').innerHTML = `<span aria-hidden="true">⛶</span><span class="fullscreen-text">${active ? t('top.exitFullscreen') : t('top.fullscreen')}</span>`;
+    $('fullscreen-button').innerHTML = `<span class="ico" aria-hidden="true">⛶</span><span class="label">${active ? t('top.exitFullscreen') : t('top.fullscreen')}</span>`;
     $('fullscreen-button').setAttribute('aria-label', active ? t('top.exitFullscreen') : t('top.enterFullscreen'));
     $('fullscreen-button').setAttribute('aria-pressed', String(active));
   }
@@ -340,7 +340,7 @@ async function startApp() {
     if ($('layer-compare-toggle')) $('layer-compare-toggle').checked = state.layerCompare;
     if (crowdRow) crowdRow.hidden = !state.flowsVisible;
     if (compareRow) compareRow.hidden = !(state.activeLayer === 'travel' || state.activeLayer === 'winners');
-    let caption = t('bottom.densityCaption', { year: population?.source?.year || '2021', source: population?.source?.shortName || t('bottom.densitySource') });
+    let caption = t('bottom.densityCaption', { year: population?.source?.year || '2021', source: t('bottom.densitySource') });
     let title = t('bottom.densityLegend');
     let min = '0';
     let max = `${fmtNumber(8000)}+`;
@@ -423,6 +423,7 @@ async function startApp() {
     attributionControl: false, antialias: true,
   });
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  if (isDebug) window.__DEBUG__.map = map;
   map.on('error', ev => {
     const err = ev?.error || ev;
     const msg = String(err?.message || err || '');
@@ -2500,7 +2501,20 @@ async function startApp() {
     animationFrame = requestAnimationFrame(frame);
   }
 
-  const modePriority = { metro: 0, rail: 1, tram: 2, bus: 3 };
+  /* Vehicle dots are thinned by one rule everywhere: the whole in-view fleet is sampled by a stable per-vehicle rank,
+     so every area gets the same share of its fleet and zooming in simply raises that share to 100%. */
+  const vehicleRank = new Map();
+  function rankOf(id) {
+    let rank = vehicleRank.get(id);
+    if (rank === undefined) {
+      let h = 2166136261;
+      for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+      h = Math.imul(h ^ (h >>> 16), 0x85ebca6b); h ^= h >>> 13;
+      rank = (h >>> 0) / 4294967296;
+      vehicleRank.set(id, rank);
+    }
+    return rank;
+  }
 
   function renderVehicles() {
     if (!map.getSource('vehicles')) return;
@@ -2519,42 +2533,25 @@ async function startApp() {
       }
     } catch (_) {}
 
-    const routes = allRoutes().filter(r => state.mapModes[r.mode] && r.active !== false && r.geometry?.length);
-    const visibleRoutes = [];
-    for (const r of routes) {
+    const vehicleBudget = (typeof innerWidth !== 'undefined' && innerWidth <= 600) ? 250 : 900;
+    const maxPerRoute = 8;
+    const pool = [], player = [];
+
+    for (const r of allRoutes()) {
+      if (!state.mapModes[r.mode] || r.active === false || !r.geometry?.length) continue;
       const geom = getRouteGeometryData(r);
       if (!geom.bbox || geom.length <= 0) continue;
-      if (geom.bbox[0] > maxLng || geom.bbox[2] < minLng || geom.bbox[1] > maxLat || geom.bbox[3] < minLat) {
-        continue;
-      }
-      visibleRoutes.push({ route: r, geom });
-    }
-
-    visibleRoutes.sort((a, b) => {
-      const pDiff = (modePriority[a.route.mode] ?? 9) - (modePriority[b.route.mode] ?? 9);
-      if (pDiff !== 0) return pDiff;
-      const hA = sim.resolveService(a.route, state.daypart).headway;
-      const hB = sim.resolveService(b.route, state.daypart).headway;
-      return hA - hB;
-    });
-
-    const maxVehicles = (typeof innerWidth !== 'undefined' && innerWidth <= 600) ? 200 : 800;
-    const features = [];
-
-    for (const { route: r, geom } of visibleRoutes) {
-      if (features.length >= maxVehicles) break;
+      if (geom.bbox[0] > maxLng || geom.bbox[2] < minLng || geom.bbox[1] > maxLat || geom.bbox[3] < minLat) continue;
       const service = sim.resolveService(r, state.daypart);
       if (!service.runs) continue;
       const length = geom.length;
       const tripMinutes = Math.max(4, length / (cruiseSpeed[r.mode] || 22) * 60);
-      const headway = service.headway;
       const bothWays = r.source === 'player' && !r.ring;
-      const targetCount = Math.min(4, Math.max(bothWays ? 2 : 1, Math.ceil(tripMinutes / headway) * (bothWays ? 2 : 1)));
-      const count = Math.min(targetCount, maxVehicles - features.length);
+      const targetCount = Math.min(maxPerRoute, Math.max(bothWays ? 2 : 1, Math.ceil(tripMinutes / service.headway) * (bothWays ? 2 : 1)));
+      const sideCount = bothWays ? targetCount / 2 : targetCount;
       const routeIdx = routeIndexMap.get(r.id) ?? 0;
 
-      for (let vehicle = 0; vehicle < count; vehicle++) {
-        const sideCount = bothWays ? targetCount / 2 : targetCount;
+      for (let vehicle = 0; vehicle < targetCount; vehicle++) {
         const reverse = bothWays && vehicle % 2 === 1;
         const sideIndex = bothWays ? Math.floor(vehicle / 2) : vehicle;
         const phase = ((state.elapsedMinutes / tripMinutes + sideIndex / sideCount + (routeIdx * .618 % 1) / sideCount) % 1 + 1) % 1;
@@ -2565,13 +2562,23 @@ async function startApp() {
         const t = dist > 0 ? Math.max(0, Math.min(1, (at - start) / dist)) : 0;
         const ax = geom.coords[k * 4], ay = geom.coords[k * 4 + 1];
         const bx = geom.coords[k * 4 + 2], by = geom.coords[k * 4 + 3];
-        features.push({
-          type: 'Feature',
-          id: `${r.id}:${vehicle}`,
-          properties: { color: routeColor(r), mode: r.mode },
-          geometry: { type: 'Point', coordinates: [ax + (bx - ax) * t, ay + (by - ay) * t] }
-        });
+        const x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+        if (x < minLng || x > maxLng || y < minLat || y > maxLat) continue;
+        const id = `${r.id}:${vehicle}`;
+        (r.source === 'player' ? player : pool).push({ id, x, y, color: routeColor(r), mode: r.mode });
       }
+    }
+
+    /* Player lines always show their vehicles; the published network shares the rest of the budget. */
+    const keep = Math.min(1, Math.max(0, vehicleBudget - player.length) / (pool.length || 1));
+    const features = [];
+    for (const v of player.concat(keep >= 1 ? pool : pool.filter(v => rankOf(v.id) < keep))) {
+      features.push({
+        type: 'Feature',
+        id: v.id,
+        properties: { color: v.color, mode: v.mode },
+        geometry: { type: 'Point', coordinates: [v.x, v.y] }
+      });
     }
 
     lastVehicleCount = features.length;
@@ -2655,10 +2662,12 @@ async function startApp() {
     coach.classList.toggle('floating', !target);
     if (!target) return;
     target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    const rect = target.getBoundingClientRect();
+    /* A target inside the layers popover must not be covered by the card, so anchor to the whole popover and sit above it. */
+    const popover = target.closest('.layers-popover');
+    const rect = (popover || target).getBoundingClientRect();
     const width = coach.offsetWidth, height = coach.offsetHeight;
-    let top = rect.bottom + 10, left = Math.min(Math.max(8, rect.left), innerWidth - width - 8);
-    if (top + height > innerHeight - 8) top = Math.max(8, rect.top - height - 10);
+    let top = popover ? rect.top - height - 10 : rect.bottom + 10, left = Math.min(Math.max(8, rect.left), innerWidth - width - 8);
+    if (popover ? top < 8 : top + height > innerHeight - 8) top = popover ? rect.bottom + 10 : Math.max(8, rect.top - height - 10);
     coach.style.top = `${top}px`;
     coach.style.left = `${left}px`;
     const box = coach.getBoundingClientRect();

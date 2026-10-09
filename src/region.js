@@ -1,5 +1,5 @@
 /* Loads one region. file:// cannot fetch the JSON snapshots. */
-import { t, getLocale, applyDom } from './i18n/index.js?v=2026-09-28-share2';
+import { t, getLocale, applyDom } from './i18n/index.js?v=2026-10-09-shell';
 
 const $ = id => document.getElementById(id);
 const language = () => getLocale();

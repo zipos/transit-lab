@@ -1,5 +1,5 @@
 import { html, raw } from '../html.js';
-import { t, fmtDecimal } from '../i18n/index.js?v=2026-10-09-budget';
+import { t, fmtDecimal } from '../i18n/index.js?v=2026-10-09-shell';
 
 export function renderResults(ctx) {
   const { $, state, format, compactMillions, region, maybeStartIntro, refreshBudget } = ctx;

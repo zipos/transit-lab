@@ -1,5 +1,5 @@
 import { html, raw } from '../html.js';
-import { t, localize, fmtDecimal } from '../i18n/index.js?v=2026-09-28-builder';
+import { t, localize, fmtDecimal } from '../i18n/index.js?v=2026-10-09-shell';
 import { modes } from '../modes.js?v=2026-09-28-builder';
 
 const MODE_ORDER = ['metro', 'tram', 'bus', 'rail'];

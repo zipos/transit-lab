@@ -1,5 +1,5 @@
 import { html, raw, directionGlyph } from '../html.js';
-import { t, plural } from '../i18n/index.js?v=2026-09-28-flows';
+import { t, plural } from '../i18n/index.js?v=2026-10-09-shell';
 import { intervalLabel } from './list.js';
 
 export function renderStopInspector(ctx) {
