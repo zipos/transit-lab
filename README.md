@@ -248,7 +248,7 @@ The boarding constant is fixed at **0**, so the transit share is **deliberately 
 
 <br>
 
-Assigned trips become daily flows on every segment. Capacity comes from each vehicle's seats plus standing room at 4 people per m²: a 12 m bus carries 68, a 30 m tram 180, a three-car rail unit 356, a six-car metro 996. Peak-hour flow is 10% of the day. Overloaded segments get a crowding penalty, and the assignment runs two more times, averaging the flows each time. The panel shows **Refining** while this happens and **Refined** when it finishes.
+Assigned trips become daily flows on every segment. Capacity comes from each vehicle's seats plus standing room at 4 people per m²: a 12 m bus carries 68, a 30 m tram 180, a three-car rail unit 356, a six-car metro 996. Peak-hour flow is 10% of the day. Overloaded segments get a crowding penalty, and the assignment runs two more times, averaging the flows each time. The panel shows **Refining** while this happens and **Refined** when it finishes. Crowding only reshapes the flows: the headline trips, wait and satisfaction come from the first, uncrowded pass, so they stay comparable with the baseline.
 
 </details>
 
