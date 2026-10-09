@@ -1010,14 +1010,33 @@ label {
 .load-bar { height: 6px; margin: 8px 0 4px; border-radius: 99px; background: rgba(38,61,80,.12); overflow: hidden; }
 .load-bar span { display: block; height: 100%; }
 .flow-card { margin: 8px 0 4px; }
-.budget-results { margin-top: 12px; }
-.budget-card { margin-top: 8px; font-size: 12px; }
+.budget-results { margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--md-outline-variant, rgba(38,61,80,.1)); }
+.budget-results .toggle-row { margin-bottom: 4px; color: var(--md-on-surface-variant, #778696); font-size: 11px; font-weight: 750; }
+.budget-card { margin-top: 10px; display: grid; gap: 7px; padding: 12px 12px 11px; border-radius: 12px; background: linear-gradient(160deg, rgba(221,244,243,.55), rgba(255,255,255,.4)); font-size: 12px; color: var(--md-on-surface-variant, #5b6f80); transition: box-shadow .2s ease, background .2s ease; }
+.budget-card .section-title { margin: 0 0 2px; }
+.budget-card p { margin: 0; }
+.budget-card b { color: var(--md-on-surface, #263d50); }
+.budget-card.warning { background: linear-gradient(160deg, rgba(255,236,230,.9), rgba(255,248,245,.7)); box-shadow: inset 0 0 0 1px rgba(196,73,58,.18); }
 .budget-card.warning .value, #pulse-budget.warning { color: #c4493a; }
+.budget-line { margin: 6px 0 2px; }
 .challenge-list { display: grid; gap: 10px; margin-top: 8px; }
-.challenge-card { padding: 10px 0; border-top: 1px solid rgba(38,61,80,.08); }
-.challenge-card.is-active { border-color: rgba(47,158,120,.35); }
-.challenge-progress { margin-top: 10px; font-size: 12px; }
+.challenge-card { padding: 12px 2px; border-top: 1px solid rgba(38,61,80,.08); transition: background .18s ease, border-color .18s ease; }
+.challenge-card.is-active { margin: 0 -8px; padding-left: 10px; padding-right: 10px; border-radius: 12px; border-color: transparent; background: linear-gradient(135deg, rgba(47,158,120,.1), rgba(7,141,155,.06)); box-shadow: inset 0 0 0 1px rgba(47,158,120,.22); }
+.challenge-card button { margin-top: 8px; }
+.challenge-progress { margin-top: 12px; padding: 12px; border-radius: 12px; background: rgba(247,249,248,.95); font-size: 12px; }
 .challenge-progress .positive { color: #2f9e78; }
+.challenge-progress .challenge-done { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(47,158,120,.12); color: #1f7a5c; font-weight: 650; }
+.challenge-progress .toolbar { margin-top: 10px; gap: 8px; }
+.layer-legend-note { margin: 6px 0 0; font-size: 10px; line-height: 1.35; color: #778696; max-width: 28ch; }
+.layer-check { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 11px; color: #5b6f80; }
+#heatmap-legend[data-layer="travel"] .heatmap-legend-scale,
+#heatmap-legend[data-layer="winners"] .heatmap-legend-scale { background: linear-gradient(90deg, #b44a5a, #e8d5c0, #4f9a7a); }
+#heatmap-legend[data-layer="travel"]:not([data-compare="1"]) .heatmap-legend-scale { background: linear-gradient(90deg, #2f6f6a, #5ea08a, #d6c36a, #d98a5a, #b44a5a); }
+@media (max-width: 390px) {
+  .layers-popover { max-width: min(100vw - 16px, 340px); }
+  .layer-legend-note { max-width: 100%; }
+  .challenge-card.is-active { margin: 0; }
+}
 .mode-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
 .mode-picker button { border: 0; cursor: pointer; }
 .mode-picker button[aria-pressed="true"] { outline: 2px solid #263d50; outline-offset: 1px; }
@@ -2618,9 +2637,29 @@ body[data-network-open='false'] .bottom-bar { left: 56px; }
 .layers-popover .map-legend { position: static; display: flex; flex-wrap: wrap; width: 100%; gap: 4px; margin-top: 10px; padding: 10px 0 0; border: 0; border-top: 1px solid var(--md-outline-variant); border-radius: 0; background: transparent; box-shadow: none; }
 .layer-check { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--md-on-surface-variant); cursor: pointer; }
 .layer-check input { width: 16px; height: 16px; accent-color: var(--md-primary); }
-.layer-legend-note { margin: 6px 0 0; font-size: 11px; line-height: 1.35; color: var(--md-on-surface-variant); }
+.layer-legend-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--md-on-surface-variant);
+  transition: opacity 200ms ease;
+}
+#heatmap-legend[data-layer='winners'][data-compare='1'] .heatmap-legend-scale {
+  background: linear-gradient(90deg, #b44a5a, #e8d5c0, #4f9a7a);
+}
+#heatmap-legend[data-layer='winners'][data-compare='0'] .heatmap-legend-scale {
+  background: linear-gradient(90deg, #d7dde2, #5ea08a, #d6c36a, #d98a5a);
+}
 #heatmap-legend[data-layer='winners'] .heatmap-legend-scale {
   background: linear-gradient(90deg, #b44a5a, #e8d5c0, #4f9a7a);
+}
+.insight-popup.maplibregl-popup { font: 600 12px/1.35 Manrope, sans-serif; }
+.insight-popup .maplibregl-popup-content {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--md-surface, #fff);
+  color: var(--md-on-surface, #263d50);
+  box-shadow: var(--shadow-float, 0 8px 24px rgba(16,33,43,.18));
 }
 #heatmap-legend[data-layer='travel'] .heatmap-legend-scale {
   background: linear-gradient(90deg, #2f6f6a, #5ea08a, #d6c36a, #d98a5a, #b44a5a, #7a3d55);

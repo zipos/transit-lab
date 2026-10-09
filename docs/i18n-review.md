@@ -110,3 +110,23 @@ Draft Polish.
 ## Simulation progress (brief 20)
 
 - Przeliczanie
+
+## Budget (brief 31)
+
+Draft Polish.
+
+- kapitał
+- Tryb budżetu
+- Budżet
+- kapitał na nową infrastrukturę
+- roczna zmiana kosztów eksploatacji
+- roczne wpływy z biletów
+- Wpływy z biletów czekają na kalibrację (brief 23b).
+- pokrycie wpływami z biletów
+- zł kapitału na nowego pasażera dziennie
+- Kapitał {{spent}} zł z budżetu {{budget}} zł
+- eksploatacja / dobę
+- {{count}} pojazdów
+- +{{count}} pojazdów wobec opublikowanej
+- Koszty planistyczne
+- Opcjonalny tryb budżetu używa planistycznych kosztów jednostkowych ze źródeł w notatce parametrów modelu. Kwoty zostają w roku kontraktu lub sprawozdania i nie są budżetem projektu ani wyceną przetargową.

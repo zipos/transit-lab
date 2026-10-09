@@ -8,7 +8,7 @@ const MLN = 1_000_000;
 export const defaultCostTable = {
   capitalCostPerKm: {
     metroTunnel: 340,
-    metroElevated: 340, /* interim = tunnel rate; docs/decisions/31-cost-sources.md */
+    metroElevated: null,
     tramSegregated: 65,
     tramStreet: 115,
     brtDedicated: 16,
@@ -18,7 +18,7 @@ export const defaultCostTable = {
   },
   costPerStation: {
     underground: 0,
-    elevated: 0, /* bundled with elevated km interim */
+    elevated: null,
     tramStop: 0.04,
     railHalt: 26,
   },

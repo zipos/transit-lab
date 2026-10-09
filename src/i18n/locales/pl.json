@@ -155,7 +155,9 @@
     "budgetOpYear": "roczna zmiana kosztów eksploatacji",
     "budgetRevenue": "roczne wpływy z biletów",
     "budgetRevenuePending": "Wpływy z biletów czekają na kalibrację (brief 23b).",
-    "budgetPerRider": "zł kapitału na nowego pasażera dziennie"
+    "budgetFarebox": "pokrycie wpływami z biletów",
+    "budgetPerRider": "zł kapitału na nowego pasażera dziennie",
+    "budgetPulseTitle": "Kapitał {{spent}} zł z budżetu {{budget}} zł"
   },
   "bottom": {
     "controls": "Sterowanie symulacją i mapą",
@@ -200,6 +202,15 @@
     "accessMax": "20 min+",
     "winnersMax": "Lepszy dostęp",
     "winnersMin": "Gorszy dostęp",
+    "winnersScenarioCaption": "Scenariusz · atrakcja celu w 45 min GC",
+    "winnersScenarioLegend": "Atrakcja w zasięgu ≤45 min GC",
+    "winnersScenarioMin": "Niżej",
+    "winnersScenarioMax": "Wyżej",
+    "winnersDeltaUnit": "p.p. względem bazy",
+    "winnersScenarioUnit": "indeks GC",
+    "travelTipMinutes": "{{min}} min drzwi-do-drzwi",
+    "travelTipSaved": "{{min}} min mniej względem bazy",
+    "travelTipSame": "{{min}} min (bez zmiany względem bazy)",
     "travelMax": "60 min+",
     "travelSavedMax": "+20 min",
     "travelSavedMin": "−20 min",
@@ -483,7 +494,9 @@
     "add": "+ Dodaj istniejący przystanek",
     "editAlignment": "Edytuj przebieg",
     "capital": "kapitał",
+    "operating": "eksploatacja / dobę",
     "fleet": "{{count}} pojazdów",
+    "fleetDelta": "+{{count}} pojazdów wobec opublikowanej",
     "reverse": "Odwróć kierunek okrężny",
     "revert": "Przywróć linię",
     "delete": "Usuń linię ({{mode}})",
@@ -589,7 +602,9 @@
     "openNetwork": "Otwórz sieć",
     "openPopulation": "Otwórz siatkę ludności",
     "populationLabel": "Ludność",
-    "gridFallback": "Siatka ludności"
+    "gridFallback": "Siatka ludności",
+    "costsTitle": "Koszty planistyczne",
+    "costs": "Opcjonalny tryb budżetu używa planistycznych kosztów jednostkowych ze źródeł w notatce parametrów modelu. Kwoty zostają w roku kontraktu lub sprawozdania i nie są budżetem projektu ani wyceną przetargową."
   },
   "count": {
     "stops": { "one": "{{n}} przystanek", "few": "{{n}} przystanki", "many": "{{n}} przystanków" },
