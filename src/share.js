@@ -35,7 +35,10 @@ export function minify(data, network, meta = {}) {
     route.active === false ? 0 : 1,
     route.ring ? 1 : 0,
     route.templateId || '',
-    (route.stopIds || []).map(stopId => point(stopId, stopIndex, custom)).filter(item => item != null)
+    (route.stopIds || []).map(stopId => point(stopId, stopIndex, custom)).filter(item => item != null),
+    route.waypoints || null,
+    route.vehicle || '',
+    route.alignment || ''
   ]);
   const packed = { r: meta.region || data.region || '', v: meta.networkVersion || data.networkVersion || '', d: data.daypart || 'peak', n: meta.name || data.name || '', o: overrides, c: routes };
   const challenge = meta.challenge || data.challenge;
@@ -69,7 +72,10 @@ export function expand(packed, network) {
     return {
       id, source: 'player', name: row[0] || '', longName: row[1] || '', mode, color: row[3] || '',
       headway: row[4], active: row[5] !== 0, ring: row[6] === 1, templateId: row[7] || null,
-      stopIds: (row[8] || []).map((ref, stopIndex) => materialize(id, ref, stopIndex, network, customStops)).filter(Boolean)
+      stopIds: (row[8] || []).map((ref, stopIndex) => materialize(id, ref, stopIndex, network, customStops)).filter(Boolean),
+      waypoints: Array.isArray(row[9]) ? row[9] : undefined,
+      vehicle: row[10] || undefined,
+      alignment: row[11] || undefined
     };
   });
   const overrides = {};

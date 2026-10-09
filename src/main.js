@@ -1,16 +1,16 @@
 import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-engine';
-import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-flows';
-import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-flows';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-builder';
+import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-builder';
 import { choiceParams, crowdMultiplier } from './sim/params.js?v=2026-09-28-flows';
 import { minify, expand, bytesToBase64Url, base64UrlToBytes, compressJson, decompressJson, shareUrl } from './share.js?v=2026-09-28-share2';
 import { createSlot, activateSlot, duplicateSlot, renameSlot, deleteSlot, slotLimit } from './slots.js?v=2026-09-28-share2';
-import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js?v=2026-09-28-share2';
-import { colors, cruiseSpeed, capacity } from './modes.js?v=2026-09-28-flows';
+import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js?v=2026-09-28-builder';
+import { colors, modes, cruiseSpeed, capacity } from './modes.js?v=2026-09-28-builder';
 import { groupLines } from './lines.js?v=2026-09-28-share2';
 import { renderRouteList } from './ui/list.js?v=2026-09-28-share2';
-import { renderDraftInspector } from './ui/draft.js?v=2026-09-28-share2';
+import { renderDraftInspector } from './ui/draft.js?v=2026-09-28-builder';
 import { renderStopInspector } from './ui/inspector-stop.js?v=2026-09-28-flows';
-import { renderLineInspector } from './ui/inspector-line.js?v=2026-09-28-flows';
+import { renderLineInspector } from './ui/inspector-line.js?v=2026-09-28-builder';
 import { renderResults } from './ui/results.js?v=2026-09-28-flows';
 import { createModal } from './ui/modal.js?v=2026-09-28-share2';
 
@@ -65,7 +65,7 @@ async function startApp() {
   }
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
-  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftRing: false, movingDraftIndex: null, draftName: 'M1', draftMode: 'metro', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 8, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], sharePreview: null, compareSlotId: null, compareName: '', challenge: null, mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
+  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftWaypoints: [], draftRing: false, draftMove: false, movingDraftIndex: null, editingRouteId: null, draftName: 'M1', draftMode: 'metro', draftVehicle: 'metro6', draftAlignment: 'tunnel', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 6, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], sharePreview: null, compareSlotId: null, compareName: '', challenge: null, mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
   let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0;
   let vehiclesActive = false, lastVehicleCount = 0;
 
@@ -162,7 +162,7 @@ async function startApp() {
     }, { color: linePalette[0], score: Infinity }).color;
   }
   function nextDraftName(mode) {
-    const prefix = ({ metro: 'M', tram: 'T', rail: 'R' })[mode] || 'L';
+    const prefix = ({ metro: 'M', tram: 'T', rail: 'R', bus: 'B' })[mode] || 'L';
     const used = new Set(state.customRoutes.filter(r => r.mode === mode).map(r => r.name));
     let n = 1;
     while (used.has(`${prefix}${n}`)) n++;
@@ -368,6 +368,9 @@ async function startApp() {
     map.on('click', onMapClick);
     $('map').addEventListener('contextmenu', event => event.preventDefault());
     $('map').addEventListener('mousedown', onMiddleDraftMouseDown, true);
+    $('map').addEventListener('pointerdown', onDraftPointerDown, true);
+    $('map').addEventListener('pointerup', cancelDraftPress, true);
+    $('map').addEventListener('pointercancel', cancelDraftPress, true);
     $('map').addEventListener('wheel', closeContextMenu, { passive: true });
     map.on('contextmenu', onMapContextMenu);
     map.on('dragstart', closeContextMenu);
@@ -516,6 +519,8 @@ async function startApp() {
     map.addSource('inspected-stop', { type: 'geojson', data: featureCollection([]) });
     map.addSource('metro-draft', { type: 'geojson', data: featureCollection([]) });
     map.addSource('metro-draft-stops', { type: 'geojson', data: featureCollection([]) });
+    map.addSource('metro-draft-rings', { type: 'geojson', data: featureCollection([]) });
+    map.addSource('metro-draft-waypoints', { type: 'geojson', data: featureCollection([]) });
     map.addSource('ruler-line', { type: 'geojson', data: featureCollection([]) });
     map.addSource('ruler-points', { type: 'geojson', data: featureCollection([]) });
     map.addSource('vehicles', { type: 'geojson', data: featureCollection([]) });
@@ -529,8 +534,10 @@ async function startApp() {
     map.addLayer({ id: 'selected-stop-label', type: 'symbol', source: 'selected-stops', minzoom: 12, layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-font': ['Noto Sans Regular'], 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-optional': true }, paint: { 'text-color': themeMedia.matches ? '#e4f5f7' : '#233746', 'text-halo-color': themeMedia.matches ? '#13232c' : '#fff', 'text-halo-width': 2 } });
     map.addLayer({ id: 'inspected-stop-halo', type: 'circle', source: 'inspected-stop', paint: { 'circle-radius': 13, 'circle-color': '#fff', 'circle-opacity': .95 } });
     map.addLayer({ id: 'inspected-stop-dot', type: 'circle', source: 'inspected-stop', paint: { 'circle-radius': 8, 'circle-color': '#163b48', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    map.addLayer({ id: 'draft-rings', type: 'fill', source: 'metro-draft-rings', paint: { 'fill-color': state.draftColor, 'fill-opacity': 0.12 } });
     map.addLayer({ id: 'draft-line', type: 'line', source: 'metro-draft', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': state.draftColor, 'line-width': 5, 'line-dasharray': [2, 1] } });
     map.addLayer({ id: 'draft-stops', type: 'circle', source: 'metro-draft-stops', paint: { 'circle-radius': 8, 'circle-color': state.draftColor, 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
+    map.addLayer({ id: 'draft-waypoints', type: 'circle', source: 'metro-draft-waypoints', paint: { 'circle-radius': 4, 'circle-color': state.draftColor, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
     map.addLayer({ id: 'ruler-halo', type: 'line', source: 'ruler-line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#102832', 'line-width': 7, 'line-opacity': .92 } });
     map.addLayer({ id: 'ruler-path', type: 'line', source: 'ruler-line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffe18a', 'line-width': 3, 'line-dasharray': [2, 1] } });
     map.addLayer({ id: 'ruler-vertices', type: 'circle', source: 'ruler-points', paint: { 'circle-radius': 5, 'circle-color': '#ffe18a', 'circle-stroke-color': '#102832', 'circle-stroke-width': 2 } });
@@ -603,25 +610,37 @@ async function startApp() {
   }
   function renderDraft() {
     if (!map.getSource('metro-draft')) return;
-    const coords = state.draft.map(s => s.pos);
-    if (state.draftRing && coords.length >= 3) coords.push(coords[0]);
+    ensureWaypoints();
+    const coords = draftCoordinates();
     setSourceData('metro-draft', featureCollection(coords.length > 1 ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }] : []));
     setSourceData('metro-draft-stops', featureCollection(state.draft.map((s, i) => pointFeature({ ...s, id: String(i) }))));
+    const waypoints = (state.draftWaypoints || []).flat().map((pos, index) => pointFeature({ id: `w${index}`, name: '', pos }));
+    setSourceData('metro-draft-waypoints', featureCollection(waypoints));
+    const radius = state.draftMode === 'rail' || state.draftMode === 'metro' ? 1.2 : 0.8;
+    setSourceData('metro-draft-rings', featureCollection(state.tool === 'metro' ? state.draft.map(station => ({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [circleRing(station.pos, radius)] } })) : []));
     map.setPaintProperty('draft-line', 'line-color', state.draftColor);
     map.setPaintProperty('draft-stops', 'circle-color', state.draftColor);
+    map.setPaintProperty('draft-waypoints', 'circle-color', state.draftColor);
+    map.setPaintProperty('draft-rings', 'fill-color', state.draftColor);
   }
 
   function onMapClick(event) {
     if (!$('map-context-menu').hidden) { closeContextMenu(); return; }
     if (rulerActive) { addRulerPoint([event.lngLat.lng, event.lngLat.lat]); return; }
     if (state.tool === 'metro') {
+      if (draftPressConsumed) { draftPressConsumed = false; return; }
       if (state.movingDraftIndex !== null) {
         const index = state.movingDraftIndex;
         state.movingDraftIndex = null;
         repositionDraftStation(index, [event.lngLat.lng, event.lngLat.lat]);
         return;
       }
-      return addDraftStation([event.lngLat.lng, event.lngLat.lat]);
+      const pos = [event.lngLat.lng, event.lngLat.lat];
+      if (draftIndexAt(event.point, 14) >= 0) return;
+      const segment = segmentAt(event.point);
+      if (segment >= 0 && event.originalEvent?.shiftKey) return addWaypoint(segment, pos);
+      if (segment >= 0) return insertDraftStation(segment, pos);
+      return addDraftStation(pos);
     }
     if (state.tool === 'add-stop') {
       return addExistingStop([event.lngLat.lng, event.lngLat.lat]);
@@ -632,12 +651,115 @@ async function startApp() {
     if (hit?.properties?.id) { selectRoute(hit.properties.id); return; }
     if (state.selected || state.selectedStop) clearSelection();
   }
+  const SNAP_KM = 0.15;
+  let draftPressTimer = null;
+  let draftPressConsumed = false;
+  function circleRing(pos, kmRadius) {
+    const coords = [];
+    for (let i = 0; i <= 48; i++) {
+      const bearing = i / 48 * Math.PI * 2;
+      const lat = pos[1] + (kmRadius / 111.2) * Math.cos(bearing);
+      const lon = pos[0] + (kmRadius / (111.2 * Math.cos(pos[1] * Math.PI / 180))) * Math.sin(bearing);
+      coords.push([lon, lat]);
+    }
+    return coords;
+  }
+  function projectSegment(pos, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = dx * dx + dy * dy;
+    if (!len) return a.slice();
+    const t = Math.max(0, Math.min(1, ((pos[0] - a[0]) * dx + (pos[1] - a[1]) * dy) / len));
+    return [a[0] + dx * t, a[1] + dy * t];
+  }
+  function segmentCount() {
+    if (state.draft.length < 2) return 0;
+    return state.draft.length - (state.draftRing && state.draft.length >= 3 ? 0 : 1);
+  }
+  function ensureWaypoints() {
+    const count = segmentCount();
+    if (!Array.isArray(state.draftWaypoints)) state.draftWaypoints = [];
+    while (state.draftWaypoints.length < count) state.draftWaypoints.push([]);
+    if (state.draftWaypoints.length > count) state.draftWaypoints.length = count;
+  }
+  function segmentEnd(index) {
+    return index + 1 < state.draft.length ? index + 1 : 0;
+  }
+  function segmentChain(index) {
+    return [state.draft[index].pos, ...(state.draftWaypoints[index] || []), state.draft[segmentEnd(index)].pos];
+  }
+  function closestLeg(pos, chain) {
+    let best = Infinity, index = 0, point = chain[0];
+    for (let i = 0; i < chain.length - 1; i++) {
+      const hit = projectSegment(pos, chain[i], chain[i + 1]);
+      const distance = sim.km(pos, hit);
+      if (distance < best) { best = distance; index = i; point = hit; }
+    }
+    return { index, point };
+  }
+  function draftCoordinates() {
+    const points = [];
+    state.draft.forEach((station, index) => {
+      points.push(station.pos);
+      if (index < segmentCount()) (state.draftWaypoints[index] || []).forEach(point => points.push(point));
+    });
+    if (state.draftRing && state.draft.length >= 3 && points.length) points.push(state.draft[0].pos);
+    return points;
+  }
+  function stationFrom(pos) {
+    const nearby = nearestStop(pos, SNAP_KM);
+    const finalPos = nearby ? nearby.pos.slice() : pos.slice();
+    if (state.draft.some(station => (station.stopId && nearby && station.stopId === nearby.id) || sim.km(station.pos, finalPos) < 0.12)) {
+      toast(t('toast.apart'));
+      return null;
+    }
+    return {
+      name: nearby ? nearby.name : t('draft.stationNumber', { n: state.draft.length + 1 }),
+      pos: finalPos,
+      stopId: nearby ? nearby.id : null,
+      schematic: !nearby,
+      coordinateNote: nearby ? t('draft.snapped') : t('draft.placed'),
+    };
+  }
+  function segmentAt(point) {
+    ensureWaypoints();
+    let nearest = -1, distance = 14;
+    for (let index = 0; index < segmentCount(); index++) {
+      const unprojected = map.unproject(point);
+      const hit = closestLeg([unprojected.lng, unprojected.lat], segmentChain(index));
+      const pixel = map.project(hit.point);
+      const gap = Math.hypot(pixel.x - point.x, pixel.y - point.y);
+      if (gap < distance) { nearest = index; distance = gap; }
+    }
+    return nearest;
+  }
   function addDraftStation(pos) {
-    const nearby = nearestStop(pos, .33);
-    const finalPos = nearby ? nearby.pos : pos;
-    if (state.draft.some(s => sim.km(s.pos, finalPos) < .12)) return toast(t('toast.apart'));
-    state.draft.push({ name: nearby ? nearby.name : t('draft.stationNumber', { n: state.draft.length + 1 }), pos: finalPos, schematic: !nearby, coordinateNote: nearby ? t('draft.snapped') : t('draft.placed') });
+    const station = stationFrom(pos);
+    if (!station) return;
+    state.draft.push(station);
+    ensureWaypoints();
     renderInspector(); renderDraft(); toast(t(state.draft.length === 1 ? 'toast.draftCount' : 'toast.draftCountPlural', { count: state.draft.length }));
+  }
+  function insertDraftStation(segmentIndex, pos) {
+    const station = stationFrom(pos);
+    if (!station) return;
+    const chain = segmentChain(segmentIndex);
+    const leg = closestLeg(pos, chain);
+    const hops = state.draftWaypoints[segmentIndex] || [];
+    const before = hops.filter((_, index) => index + 1 <= leg.index);
+    const after = hops.filter((_, index) => index + 1 > leg.index);
+    if (!station.stopId) station.pos = leg.point;
+    state.draft.splice(segmentIndex + 1, 0, station);
+    state.draftWaypoints.splice(segmentIndex, 1, before, after);
+    ensureWaypoints();
+    renderInspector(); renderDraft(); toast(t('toast.inserted', { name: station.name }));
+  }
+  function addWaypoint(segmentIndex, pos) {
+    const chain = segmentChain(segmentIndex);
+    const leg = closestLeg(pos, chain);
+    const hops = (state.draftWaypoints[segmentIndex] || []).slice();
+    hops.splice(leg.index, 0, leg.point);
+    state.draftWaypoints[segmentIndex] = hops;
+    renderInspector(); renderDraft(); toast(t('toast.waypoint'));
   }
   function addExistingStop(pos) {
     const nearby = nearestStop(pos, .55);
@@ -656,11 +778,90 @@ async function startApp() {
   function repositionDraftStation(index, pos) {
     const current = state.draft[index];
     if (!current) return;
-    const nearby = nearestStop(pos, .12);
-    const finalPos = nearby ? nearby.pos : pos;
-    if (state.draft.some((s, i) => i !== index && sim.km(s.pos, finalPos) < .12)) { renderDraft(); return toast(t('toast.apart')); }
-    state.draft[index] = { ...current, pos: finalPos, schematic: !nearby, coordinateNote: nearby ? t('draft.snappedMoved') : t('draft.adjusted') };
+    const nearby = nearestStop(pos, SNAP_KM);
+    const finalPos = nearby ? nearby.pos.slice() : pos.slice();
+    if (state.draft.some((s, i) => i !== index && ((s.stopId && nearby && s.stopId === nearby.id) || sim.km(s.pos, finalPos) < .12))) {
+      renderDraft();
+      return toast(t('toast.apart'));
+    }
+    state.draft[index] = {
+      ...current,
+      pos: finalPos,
+      stopId: nearby ? nearby.id : null,
+      schematic: !nearby,
+      coordinateNote: nearby ? t('draft.snappedMoved') : t('draft.adjusted'),
+    };
     renderInspector(); renderDraft(); toast(t('toast.moved', { name: current.name }));
+  }
+  function onDraftPointerDown(event) {
+    if (state.tool !== 'metro' || rulerActive || event.button > 0) return;
+    const rect = map.getCanvasContainer().getBoundingClientRect();
+    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const index = draftIndexAt(point, 22);
+    if (index < 0) return;
+    if (state.draftMove) {
+      event.preventDefault();
+      event.stopPropagation();
+      draftPressConsumed = true;
+      state.movingDraftIndex = index;
+      map.getCanvas().style.cursor = 'grabbing';
+      toast(t('toast.move', { name: state.draft[index].name }));
+      return;
+    }
+    clearTimeout(draftPressTimer);
+    draftPressTimer = setTimeout(() => {
+      draftPressConsumed = true;
+      state.movingDraftIndex = index;
+      map.getCanvas().style.cursor = 'grabbing';
+      toast(t('toast.move', { name: state.draft[index].name }));
+    }, 480);
+  }
+  function cancelDraftPress() {
+    clearTimeout(draftPressTimer);
+    draftPressTimer = null;
+  }
+  function draftCatchment() {
+    ensureWaypoints();
+    const radiusKm = state.draftMode === 'rail' || state.draftMode === 'metro' ? 1.2 : 0.8;
+    const cells = densityCells.length ? densityCells : (population?.cells || []);
+    let residents = 0;
+    let newlyRapid = 0;
+    const covered = new Set();
+    for (const cell of cells) {
+      const pop = +cell.population || 0;
+      if (!(pop > 0)) continue;
+      const pos = [+cell.lon, +cell.lat];
+      let near = false;
+      for (const station of state.draft) {
+        if (sim.km(pos, station.pos) <= radiusKm) { near = true; break; }
+      }
+      if (!near) continue;
+      residents += pop;
+      const id = cell.id || `${cell.lon}:${cell.lat}`;
+      covered.add(id);
+    }
+    const rapid = accessGrid().rapidStops || [];
+    for (const cell of cells) {
+      const pop = +cell.population || 0;
+      if (!(pop > 0)) continue;
+      const pos = [+cell.lon, +cell.lat];
+      const id = cell.id || `${cell.lon}:${cell.lat}`;
+      if (!covered.has(id)) continue;
+      const already = rapid.some(station => sim.km(pos, station.pos) <= 0.8);
+      if (!already) newlyRapid += pop;
+    }
+    const coords = draftCoordinates();
+    let kmTotal = 0;
+    for (let i = 1; i < coords.length; i++) kmTotal += sim.km(coords[i - 1], coords[i]);
+    const dwell = (modes[state.draftMode]?.dwell || 0.55) * Math.max(0, state.draft.length - (state.draftRing ? 0 : 1));
+    const cruise = cruiseSpeed[state.draftMode] || 30;
+    const minutes = kmTotal / cruise * 60 + dwell;
+    const hint = (modes[state.draftMode]?.stopSpacingHint || 400) * 0.5 / 1000;
+    let tooClose = false;
+    for (let i = 1; i < state.draft.length; i++) {
+      if (sim.km(state.draft[i - 1].pos, state.draft[i].pos) < hint) { tooClose = true; break; }
+    }
+    return { residents: Math.round(residents), newlyRapid: Math.round(newlyRapid), km: kmTotal, minutes, tooClose };
   }
   function draftIndexAt(point, maxPx = 20) {
     if (state.tool !== 'metro') return -1;
@@ -827,7 +1028,17 @@ async function startApp() {
     for (const s of network.stops) { const d = sim.km(pos, s.pos); if (d < distance) { best = s; distance = d; } }
     return best;
   }
-  function routeGeometry(ids, ring = false) { return [ids.concat(ring && ids.length >= 3 ? ids[0] : []).map(stop).filter(Boolean).map(s => s.pos)]; }
+  function routeGeometry(ids, ring = false, waypoints = []) {
+    const points = [];
+    ids.forEach((id, index) => {
+      const station = stop(id);
+      if (!station) return;
+      points.push(station.pos);
+      if (index < ids.length - 1 || ring) (waypoints[index] || []).forEach(point => points.push(point));
+    });
+    if (ring && points.length) points.push(points[0].slice());
+    return [points];
+  }
   function writeRoute(route, fields) {
     if (route.source === 'player') {
       const i = state.customRoutes.findIndex(item => item.id === route.id);
@@ -842,7 +1053,8 @@ async function startApp() {
     if (ids.length < 2) return toast(t('toast.needTwo'));
     remember();
     const ring = route.ring === true && ids.length >= 3;
-    writeRoute(route, { ring, stopIds: ids, geometry: routeGeometry(ids, ring), edited: true });
+    const waypoints = Array.isArray(route.waypoints) ? route.waypoints : [];
+    writeRoute(route, { ring, stopIds: ids, waypoints, geometry: routeGeometry(ids, ring, waypoints), edited: true });
     changed();
   }
   function setRouteField(route, field, value) {
@@ -889,22 +1101,143 @@ async function startApp() {
   function createMetro() {
     if (state.draft.length < (state.draftRing ? 3 : 2)) return toast(state.draftRing ? t('toast.ring') : t('toast.two'));
     remember();
-    const stamp = Date.now().toString(36), id = `${state.draftMode}:${stamp}`;
-    const stops = state.draft.map((s, i) => ({ id: `${id}:${i}`, name: s.name, pos: s.pos, city: 'Player', schematic: !!s.schematic, coordinateNote: s.coordinateNote || '' }));
-    state.customStops.push(...stops);
-    const template = state.draftTemplate;
-    state.customRoutes.push({
-      id, source: 'player', name: state.draftName.trim() || nextDraftName(state.draftMode),
-      longName: localize(template?.title) || t('draft.playerLine', { mode: modeLabel(state.draftMode).toLowerCase() }),
-      mode: state.draftMode, color: state.draftColor, stopIds: stops.map(s => s.id),
-      geometry: routeGeometry(stops.map(s => s.id), state.draftRing), ring: state.draftRing, headway: Number(state.draftHeadway) || 8,
-      active: true, edited: true, templateId: template?.id || null,
-      templateSourceUrl: template?.sourceUrl || null, templateSourceTitle: template?.sourceTitle || null,
-      templateDescription: template?.description || null, templateConfidence: template?.confidence || null,
-      templateStatus: template?.status || null, schematic: !!template
+    ensureWaypoints();
+    const editing = state.editingRouteId;
+    const id = editing || `${state.draftMode}:${Date.now().toString(36)}`;
+    if (editing) {
+      state.customStops = state.customStops.filter(station => !station.id.startsWith(id + ':'));
+      state.customRoutes = state.customRoutes.filter(route => route.id !== id);
+    }
+    const stopIds = [];
+    const owned = [];
+    state.draft.forEach((station, index) => {
+      if (station.stopId && stop(station.stopId)) {
+        stopIds.push(station.stopId);
+        return;
+      }
+      const stopId = `${id}:${index}`;
+      owned.push({
+        id: stopId,
+        name: station.name,
+        pos: station.pos.slice(),
+        city: 'Player',
+        schematic: !!station.schematic,
+        coordinateNote: station.coordinateNote || '',
+      });
+      stopIds.push(stopId);
     });
-    state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.tool = 'inspect'; state.selected = id; state.draftName = nextDraftName(state.draftMode); state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = colors.metro; setMobileView('line');
-    map.getCanvas().style.cursor = ''; changed(); toast(t('toast.opened'));
+    state.customStops.push(...owned);
+    const template = state.draftTemplate;
+    const waypoints = state.draftWaypoints.map(segment => segment.map(point => point.slice()));
+    const shaped = waypoints.some(segment => segment.length);
+    state.customRoutes.push({
+      id,
+      source: 'player',
+      name: state.draftName.trim() || nextDraftName(state.draftMode),
+      longName: localize(template?.title) || t('draft.playerLine', { mode: modeLabel(state.draftMode).toLowerCase() }),
+      mode: state.draftMode,
+      color: state.draftColor,
+      vehicle: state.draftVehicle || modes[state.draftMode].vehicleOptions[0],
+      alignment: state.draftAlignment || modes[state.draftMode].alignmentOptions[0],
+      stopIds,
+      waypoints: shaped ? waypoints : undefined,
+      geometry: routeGeometry(stopIds, state.draftRing, shaped ? waypoints : []),
+      ring: state.draftRing,
+      headway: Number(state.draftHeadway) || modes[state.draftMode].defaultHeadway || 8,
+      active: true,
+      edited: true,
+      templateId: template?.id || null,
+      templateSourceUrl: template?.sourceUrl || null,
+      templateSourceTitle: template?.sourceTitle || null,
+      templateDescription: template?.description || null,
+      templateConfidence: template?.confidence || null,
+      templateStatus: template?.status || null,
+      schematic: !!template,
+    });
+    state.draft = [];
+    state.draftWaypoints = [];
+    state.draftRing = false;
+    state.draftMove = false;
+    state.movingDraftIndex = null;
+    state.editingRouteId = null;
+    state.tool = 'inspect';
+    state.selected = id;
+    state.draftName = nextDraftName(state.draftMode);
+    state.draftMode = 'metro';
+    state.draftVehicle = 'metro6';
+    state.draftAlignment = 'tunnel';
+    state.draftTemplate = null;
+    state.draftColor = colors.metro;
+    setMobileView('line');
+    map.getCanvas().style.cursor = '';
+    changed();
+    toast(editing ? t('toast.savedLine') : t('toast.opened'));
+  }
+  function editPlayerAlignment(route) {
+    if (!route || route.source !== 'player') return;
+    state.tool = 'metro';
+    state.selected = null;
+    state.selectedStop = null;
+    state.editingRouteId = route.id;
+    state.draftMode = route.mode;
+    state.draftVehicle = route.vehicle || modes[route.mode].vehicleOptions[0];
+    state.draftAlignment = route.alignment || modes[route.mode].alignmentOptions[0];
+    state.draftName = route.name;
+    state.draftColor = routeColor(route);
+    state.draftHeadway = route.headway;
+    state.draftRing = !!route.ring;
+    state.draftMove = false;
+    state.movingDraftIndex = null;
+    state.draftTemplate = null;
+    state.draft = route.stopIds.map(id => {
+      const station = stop(id);
+      const published = network.stops.some(item => item.id === id);
+      return {
+        name: station?.name || id,
+        pos: station?.pos.slice() || [0, 0],
+        stopId: published ? id : null,
+        schematic: !!station?.schematic,
+        coordinateNote: station?.coordinateNote || '',
+      };
+    }).filter(station => Number.isFinite(station.pos[0]));
+    state.draftWaypoints = Array.isArray(route.waypoints)
+      ? route.waypoints.map(segment => (segment || []).map(point => point.slice()))
+      : [];
+    ensureWaypoints();
+    setMobileView('line');
+    setPanel('inspector', true);
+    map.getCanvas().style.cursor = 'crosshair';
+    renderList();
+    renderInspector();
+    renderDraft();
+    toast(t('toast.editAlignment'));
+  }
+  function enterLineTool(mode = 'metro') {
+    const spec = modes[mode] || modes.metro;
+    state.tool = 'metro';
+    state.selected = null;
+    state.selectedStop = null;
+    state.draft = [];
+    state.draftWaypoints = [];
+    state.draftRing = false;
+    state.draftMove = false;
+    state.movingDraftIndex = null;
+    state.editingRouteId = null;
+    state.draftMode = mode;
+    state.draftVehicle = spec.vehicleOptions[0];
+    state.draftAlignment = spec.alignmentOptions[0];
+    state.draftTemplate = null;
+    state.draftColor = suggestLineColor() || colors[mode];
+    state.draftName = nextDraftName(mode);
+    state.draftHeadway = spec.defaultHeadway;
+    setMobileView('line');
+    setPanel('inspector', true);
+    map.getCanvas().style.cursor = 'crosshair';
+    renderList();
+    renderInspector();
+    renderSelection();
+    renderDraft();
+    toast(t('toast.place'));
   }
   function renderTemplates() {
     const host = $('template-list');
@@ -920,17 +1253,25 @@ async function startApp() {
   function loadTemplate(templateId) {
     const template = templates.find(t => t.id === templateId);
     if (!template || !Array.isArray(template.stations) || template.stations.length < 2) return toast(t('toast.incomplete'));
-    const mode = ['tram', 'rail', 'metro'].includes(template.mode) ? template.mode : 'rail';
-    state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = template;
-    state.draftMode = mode; state.draftColor = suggestLineColor(template.stations.map(s => [Number(s.lon), Number(s.lat)]));
+    const mode = ['tram', 'rail', 'metro', 'bus'].includes(template.mode) ? template.mode : 'rail';
+    const spec = modes[mode] || modes.rail;
+    state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draftRing = false; state.draftMove = false; state.movingDraftIndex = null; state.editingRouteId = null; state.draftTemplate = template;
+    state.draftMode = mode; state.draftVehicle = spec.vehicleOptions[0]; state.draftAlignment = spec.alignmentOptions[0];
+    state.draftColor = suggestLineColor(template.stations.map(s => [Number(s.lon), Number(s.lat)]));
     state.draftName = template.defaultName || nextDraftName(mode);
-    state.draftHeadway = Number(template.headway) || 8;
-    state.draft = template.stations.map((station, i) => ({
-      name: station.name || t('draft.stationNumber', { n: i + 1 }),
-      pos: [Number(station.lon), Number(station.lat)],
-      schematic: station.schematic !== false,
-      coordinateNote: localize(station.coordinateNote) || ''
-    })).filter(s => Number.isFinite(s.pos[0]) && Number.isFinite(s.pos[1]));
+    state.draftHeadway = Number(template.headway) || spec.defaultHeadway;
+    state.draftWaypoints = [];
+    state.draft = template.stations.map((station, i) => {
+      const pos = [Number(station.lon), Number(station.lat)];
+      const nearby = nearestStop(pos, SNAP_KM);
+      return {
+        name: station.name || nearby?.name || t('draft.stationNumber', { n: i + 1 }),
+        pos: nearby ? nearby.pos.slice() : pos,
+        stopId: nearby ? nearby.id : null,
+        schematic: nearby ? false : station.schematic !== false,
+        coordinateNote: nearby ? t('draft.snapped') : (localize(station.coordinateNote) || '')
+      };
+    }).filter(s => Number.isFinite(s.pos[0]) && Number.isFinite(s.pos[1]));
     if (state.draft.length < 2) { state.draft = []; state.draftTemplate = null; state.tool = 'inspect'; return toast(t('toast.noCoords')); }
     setMobileView('line');
     if (innerWidth <= 900 && innerWidth > 600) setPanel('network', false);
@@ -961,7 +1302,7 @@ async function startApp() {
     };
   }
   function renderStats() { renderResults(ctx); renderCompare(); }
-  function enterMetroTool() { state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftMode = 'metro'; state.draftTemplate = null; state.draftColor = suggestLineColor(); state.draftName = nextDraftName('metro'); setMobileView('line'); setPanel('inspector', true); map.getCanvas().style.cursor = 'crosshair'; renderList(); renderInspector(); renderSelection(); renderDraft(); toast(t('toast.place')); }
+  function enterMetroTool() { enterLineTool('metro'); }
 
   let statsPool = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
   let sliceArrivals = [], sliceProgress = [], lastScenario = null, refineState = null;
@@ -975,7 +1316,7 @@ async function startApp() {
     const scale = new Float32Array(daily.length);
     scale.fill(1);
     for (const pattern of layout) {
-      const hourly = (60 / pattern.headway) * (capacity[pattern.mode] || 1);
+      const hourly = (60 / pattern.headway) * (pattern.capacity || capacity[pattern.mode] || 1);
       for (let s = 0; s < pattern.km.length; s++) {
         const vc = hourly > 0 ? daily[pattern.offset + s] * choiceParams.peakHourShare / hourly : 0;
         scale[pattern.offset + s] = crowdMultiplier(vc);
@@ -1114,7 +1455,7 @@ async function startApp() {
     if (statsPool?.length === count) return statsPool;
     statsPool?.forEach(worker => worker.terminate());
     statsPool = Array.from({ length: count }, () => {
-      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-flows`, import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL(`./sim/worker.js?v=${loaded.cacheVersion}-builder`, import.meta.url), { type: 'module' });
       worker.onmessage = ({ data }) => onPoolMessage(data);
       worker.onerror = () => {
         statsPool?.forEach(item => item.terminate());
@@ -1486,7 +1827,7 @@ async function startApp() {
       if (state.selected || state.selectedStop) { clearSelection(); return; }
       if (state.tool !== 'inspect') {
         if (state.draft.length && !await confirmDialog(t('confirm.discard'))) return;
-        state.tool = 'inspect'; state.draft = []; state.draftRing = false; state.movingDraftIndex = null; state.draftTemplate = null; state.draftMode = 'metro'; state.draftColor = colors.metro;
+        state.tool = 'inspect'; state.draft = []; state.draftWaypoints = []; state.draftRing = false; state.draftMove = false; state.movingDraftIndex = null; state.editingRouteId = null; state.draftTemplate = null; state.draftMode = 'metro'; state.draftColor = colors.metro;
         map.getCanvas().style.cursor = '';
         renderInspector(); renderDraft();
       }
@@ -1503,6 +1844,20 @@ async function startApp() {
       return;
     }
     const editing = e.target instanceof Element && e.target.matches('input, textarea, select, [contenteditable="true"]');
+    if (!editing && state.tool === 'metro' && e.key === 'Backspace') {
+      e.preventDefault();
+      if (!state.draft.length) return;
+      state.draft.pop();
+      ensureWaypoints();
+      renderInspector();
+      renderDraft();
+      return;
+    }
+    if (!editing && state.tool === 'metro' && e.key === 'Enter') {
+      e.preventDefault();
+      createMetro();
+      return;
+    }
     if (!editing && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFullscreen(); return; }
     if (!editing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); $('undo-button').click(); }
   };
@@ -1729,7 +2084,7 @@ async function startApp() {
     if (isDebug) window.__DEBUG__.lastVehicleCount = lastVehicleCount;
     setSourceData('vehicles', featureCollection(features));
   }
-  Object.assign(ctx, { $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, focusFlow, remember, changed, toast, map, enterMetroTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry });
+  Object.assign(ctx, { $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, editPlayerAlignment, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, focusFlow, remember, changed, toast, map, enterMetroTool, enterLineTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry, draftCatchment, confirmDialog, nextDraftName });
   renderTemplates(); renderList(); renderInspector();
   document.addEventListener('pointerdown', e => {
     if (intro.active && intro.index === 0) return;

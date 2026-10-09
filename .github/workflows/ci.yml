@@ -63,6 +63,9 @@ jobs:
       - name: Run flow audit
         run: node tests/flows-audit.mjs
 
+      - name: Run line-builder audit
+        run: node tests/builder-audit.mjs
+
       - name: Install Playwright and browser dependencies
         run: |
           npm install --no-save @playwright/test

@@ -44,7 +44,7 @@ for (const [key, source] of Object.entries({ templateSourceUrl: 'sourceUrl', tem
 const serialized = JSON.stringify(cleaned);
 for (const payload of ['javascript:', 'background-image', 'scenario-attack.invalid', '__proto__', 'polluted', 'unknown-template', 'Forged metadata', 'Invalid coordinates', 'Outside network', 'metro:huge']) assert.ok(!serialized.includes(payload), payload);
 assert.equal(vm.runInNewContext('({}).polluted', context), undefined);
-assert.deepEqual(Object.keys(first).sort(), ['id', 'source', 'name', 'longName', 'mode', 'color', 'headway', 'active', 'ring', 'edited', 'stopIds', 'geometry'].sort());
+assert.deepEqual(Object.keys(first).sort(), ['id', 'source', 'name', 'longName', 'mode', 'color', 'headway', 'active', 'ring', 'edited', 'stopIds', 'geometry', 'vehicle', 'alignment'].sort());
 assert.deepEqual(Object.keys(cleaned.customStops[0]).sort(), ['id', 'name', 'pos', 'city', 'schematic', 'coordinateNote'].sort());
 
 for (const url of ['https://example.org/a?b=c', 'http://example.org/', 'HTTPS://example.org']) assert.equal(safeUrl(url), url);

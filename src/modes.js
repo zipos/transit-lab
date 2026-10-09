@@ -11,10 +11,10 @@ export const vehicles = {
 };
 
 export const modes = {
-  bus: { label: 'Bus', color: '#ef705e', speed: 22, capacity: vehicles.bus12.capacity, costPerKm: 12, dwell: 0.55 },
-  tram: { label: 'Tram', color: '#15b8c7', speed: 25, capacity: vehicles.tram30.capacity, costPerKm: 20, dwell: 0.55 },
-  rail: { label: 'Rail', color: '#5387ef', speed: 48, capacity: vehicles.emu3.capacity, costPerKm: 38, dwell: 0.55 },
-  metro: { label: 'Metro', color: '#8068e8', speed: 42, capacity: vehicles.metro6.capacity, costPerKm: 55, dwell: 0.55 }
+  bus: { label: 'Bus', color: '#ef705e', speed: 22, capacity: vehicles.bus12.capacity, costPerKm: 12, dwell: 0.55, stopSpacingHint: 400, defaultHeadway: 10, vehicleOptions: ['bus12', 'bus18'], alignmentOptions: ['street', 'lane'] },
+  tram: { label: 'Tram', color: '#15b8c7', speed: 25, capacity: vehicles.tram30.capacity, costPerKm: 20, dwell: 0.55, stopSpacingHint: 500, defaultHeadway: 8, vehicleOptions: ['tram30'], alignmentOptions: ['street', 'segregated'] },
+  rail: { label: 'Rail', color: '#5387ef', speed: 48, capacity: vehicles.emu3.capacity, costPerKm: 38, dwell: 0.55, stopSpacingHint: 1500, defaultHeadway: 20, vehicleOptions: ['emu3'], alignmentOptions: ['track'] },
+  metro: { label: 'Metro', color: '#8068e8', speed: 42, capacity: vehicles.metro6.capacity, costPerKm: 55, dwell: 0.55, stopSpacingHint: 1000, defaultHeadway: 6, vehicleOptions: ['metro6'], alignmentOptions: ['tunnel', 'elevated'] }
 };
 
 export const modeSpeed = {

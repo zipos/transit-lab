@@ -1010,6 +1010,16 @@ label {
 .load-bar { height: 6px; margin: 8px 0 4px; border-radius: 99px; background: rgba(38,61,80,.12); overflow: hidden; }
 .load-bar span { display: block; height: 100%; }
 .flow-card { margin: 8px 0 4px; }
+.mode-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+.mode-picker button { border: 0; cursor: pointer; }
+.mode-picker button[aria-pressed="true"] { outline: 2px solid #263d50; outline-offset: 1px; }
+.draft-live { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 10px 0; font-size: 12px; color: #5b6f80; }
+.draft-live b { color: #243746; }
+.draft-actions { position: sticky; bottom: 0; margin-top: 12px; padding: 10px 0 4px; background: linear-gradient(180deg, rgba(248,250,251,0), rgba(248,250,251,.96) 35%); z-index: 2; }
+.sticky-draft { padding-bottom: 4px; }
+@media (max-width: 600px) {
+  .draft-actions { padding-bottom: 12px; }
+}
 .secondary-stats span { padding: 7px 9px; border-radius: 8px; background: rgba(243,247,247,.9); color: #778696; font-size: 10px; }
 .secondary-stats b { color: #263d50; }
 .inspector-heading { margin: 3px 0 8px; font-family: Manrope,sans-serif; font-size: 22px; letter-spacing: -.05em; }

@@ -1,5 +1,5 @@
 /* Deterministic accessibility model. All outputs are estimates, never observed ridership. */
-import { modes, cruiseSpeed, costPerKm as rate } from '../modes.js';
+import { modes, vehicles, cruiseSpeed, costPerKm as rate } from '../modes.js';
 import { resolveChoice, waitMinutes, carMinutes } from './params.js';
 
 export const modelVersion = 4;
@@ -287,7 +287,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         const daily = segmentDaily[pattern.offset + s];
         const seg = pattern.segments[s];
         const peak = daily * choice.peakHourShare;
-        const hourly = (60 / pattern.headway) * (modes[pattern.mode]?.capacity || 1);
+        const hourly = (60 / pattern.headway) * (pattern.capacity || modes[pattern.mode]?.capacity || 1);
         const vc = hourly > 0 ? peak / hourly : 0;
         passengerKm += daily * seg.km;
         if (vc > 1) overloaded++;
@@ -327,6 +327,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       layout: flow.patterns.map(pattern => ({
         routeId: pattern.routeId,
         mode: pattern.mode,
+        capacity: pattern.capacity,
         headway: pattern.headway,
         offset: pattern.offset,
         km: pattern.segments.map(segment => segment.km),
@@ -359,7 +360,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       for (let s = 0; s < pattern.km.length; s++) {
         const daily = segmentDaily[pattern.offset + s];
         const peak = daily * choice.peakHourShare;
-        const hourly = (60 / pattern.headway) * (modes[pattern.mode]?.capacity || 1);
+        const hourly = (60 / pattern.headway) * (pattern.capacity || modes[pattern.mode]?.capacity || 1);
         const vc = hourly > 0 ? peak / hourly : 0;
         passengerKm += daily * pattern.km[s];
         if (vc > 1) overloaded++;
@@ -573,7 +574,12 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
           if (i < direction.length - 1 || ring) {
             const next = (i + 1) % direction.length;
             const nextStop = direction[next];
-            const distance = km(stops[stop].pos, stops[nextStop].pos) * distanceFactor;
+            const forwardIndex = indexed ? i : sequence.length - 2 - i;
+            const hops = route.waypoints?.[forwardIndex];
+            const ordered = hops?.length && !indexed ? hops.slice().reverse() : hops;
+            const distance = ordered?.length
+              ? [stops[stop].pos, ...ordered, stops[nextStop].pos].reduce((sum, point, index, chain) => index ? sum + km(chain[index - 1], point) : 0, 0)
+              : km(stops[stop].pos, stops[nextStop].pos) * distanceFactor;
             length += distance;
             const ride = useTimes && next > i
               ? Math.max(choice.alightMinutes, service.times[next] - service.times[i])
@@ -593,6 +599,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         flowPatterns.push({
           routeId: route.id,
           mode: route.mode,
+          capacity: vehicles[route.vehicle]?.mode === route.mode ? vehicles[route.vehicle].capacity : modes[route.mode].capacity,
           headway,
           ring,
           firstStop: direction[0],

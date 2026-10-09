@@ -1,4 +1,4 @@
-import { createModel } from './model.js?v=2026-09-28-flows';
+import { createModel } from './model.js?v=2026-09-28-builder';
 
 let model;
 const sliceBaseline = new Map();

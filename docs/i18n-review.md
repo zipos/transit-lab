@@ -76,6 +76,19 @@ Draft Polish. The share is explicitly not calibrated.
 - {{share}}% w 800 m od tramwaju lub kolei
 - udział wewnątrz tej gminy
 
+## Line builder (brief 30)
+
+Draft Polish.
+
+- Narysuj linię ({{mode}})
+- Edytuj przebieg
+- Zapisz przebieg
+- Wspólny opublikowany przystanek
+- mieszkańców w zasięgu
+- nowo w 800 m od szybkiego transportu
+- Wydzielony pas / Tunel / Estakada
+- Zamieniono {{count}} skopiowanych przystanków…
+
 ## Flows and crowding (brief 24)
 
 Draft Polish.
