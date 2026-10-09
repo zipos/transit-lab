@@ -1,8 +1,9 @@
 import { html, raw } from '../html.js';
-import { t, fmtDecimal } from '../i18n/index.js?v=2026-09-28-flows';
+import { t, fmtDecimal } from '../i18n/index.js?v=2026-10-09-budget';
 
 export function renderResults(ctx) {
-  const { $, state, format, compactMillions, region, maybeStartIntro } = ctx;
+  const { $, state, format, compactMillions, region, maybeStartIntro, refreshBudget } = ctx;
+  if (typeof refreshBudget === 'function') refreshBudget();
   const stats = state.stats;
   const baseline = state.baseline;
   if (!stats) return;
@@ -66,5 +67,27 @@ export function renderResults(ctx) {
   $('flow-results').querySelectorAll('[data-flow-route]').forEach(button => {
     button.onclick = () => ctx.focusFlow(button.dataset.flowRoute, button.dataset.flowFrom, button.dataset.flowTo);
   });
+  const budgetHost = $('budget-results');
+  if (budgetHost) {
+    const budget = state.budgetSummary;
+    const challengeLock = !!state.challenge;
+    const farebox = budget?.calibrated && budget.fareboxRecovery != null
+      ? html`<p><b>${fmtDecimal(budget.fareboxRecovery * 100, 0)}%</b> ${t('results.budgetFarebox')}</p>`
+      : '';
+    const revenue = budget?.calibrated
+      ? html`<p><b>${compactMillions(Math.round(budget.revenueYear || 0))}</b> ${t('results.budgetRevenue')}</p>`
+      : html`<p class="fine-print">${t('results.budgetRevenuePending')}</p>`;
+    const card = state.budgetMode && budget
+      ? html`<div class="budget-card ${raw(budget.overBudget ? 'warning' : '')}"><div class="section-title"><h3>${t('results.budget')}</h3><span class="value">${compactMillions(budget.capital)} / ${compactMillions(budget.budgetCap)}</span></div><p><b>${compactMillions(budget.capitalInfra)}</b> ${t('results.budgetCapital')}</p><p><b>${compactMillions(Math.round(budget.opDeltaYear))}</b> ${t('results.budgetOpYear')}</p>${raw(revenue)}${raw(farebox)}${raw(budget.costPerNewRider != null ? html`<p><b>${format(Math.round(budget.costPerNewRider))}</b> ${t('results.budgetPerRider')}</p>` : '')}</div>`
+      : '';
+    budgetHost.innerHTML = html`<label class="toggle-row"><input id="budget-mode" type="checkbox" ${raw(state.budgetMode ? 'checked' : '')} ${raw(challengeLock ? 'disabled' : '')}> ${t('results.budgetMode')}</label>${raw(card)}`;
+    const toggle = $('budget-mode');
+    if (toggle && !challengeLock) toggle.onchange = event => {
+      state.budgetMode = event.target.checked;
+      if (typeof refreshBudget === 'function') refreshBudget();
+      renderResults(ctx);
+      if (typeof ctx.renderInspector === 'function') ctx.renderInspector();
+    };
+  }
   maybeStartIntro();
 }

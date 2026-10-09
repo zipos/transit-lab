@@ -228,5 +228,9 @@
   "demand": {
     "zoneTarget": 450,
     "tripRate": 0.6
+  },
+  "budget": {
+    "capitalPLN": 5000000000,
+    "annualFactor": 365
   }
 }

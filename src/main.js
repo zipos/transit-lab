@@ -1,7 +1,8 @@
 import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-engine';
-import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-09-28-builder';
+import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-10-09-budget';
 import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-builder';
 import { choiceParams, crowdMultiplier } from './sim/params.js?v=2026-09-28-flows';
+import { summarizeBudget, capitalCosts } from './sim/budget.js?v=2026-10-09-budget';
 import { minify, expand, bytesToBase64Url, base64UrlToBytes, compressJson, decompressJson, shareUrl } from './share.js?v=2026-09-28-share2';
 import { createSlot, activateSlot, duplicateSlot, renameSlot, deleteSlot, slotLimit } from './slots.js?v=2026-09-28-share2';
 import { normalize, safeUrl as scenarioSafeUrl, safeColor } from './scenario.js?v=2026-09-28-builder';
@@ -10,9 +11,14 @@ import { groupLines } from './lines.js?v=2026-09-28-share2';
 import { renderRouteList } from './ui/list.js?v=2026-09-28-share2';
 import { renderDraftInspector } from './ui/draft.js?v=2026-09-28-builder';
 import { renderStopInspector } from './ui/inspector-stop.js?v=2026-09-28-flows';
-import { renderLineInspector } from './ui/inspector-line.js?v=2026-09-28-builder';
-import { renderResults } from './ui/results.js?v=2026-09-28-flows';
+import { renderLineInspector } from './ui/inspector-line.js?v=2026-10-09-budget';
+import { renderResults } from './ui/results.js?v=2026-10-09-budget';
 import { createModal } from './ui/modal.js?v=2026-09-28-share2';
+import { loadChallengeBook, saveChallengeBook, evaluateChallenge, challengeAllowsMode, countPlayerLines } from './challenges.js?v=2026-10-09-challenges';
+import {
+  flowBandCollection, flowStopCollection, paintFlowCells, paintTravelCells,
+  vcColorExpression, modeColorExpression, flowWidthExpression,
+} from './layers.js?v=2026-10-09-layers';
 
 window.TransitScenario = { normalize, safeUrl: scenarioSafeUrl, safeColor };
 applyDom();
@@ -30,6 +36,8 @@ async function startApp() {
   const network = window.TRANSIT_NETWORK;
   const population = window.TRANSIT_POPULATION;
   const templates = window.TRANSIT_TEMPLATES?.templates || [];
+  const challengeCatalog = window.TRANSIT_CHALLENGES?.challenges || [];
+  let challengeBook = loadChallengeBook(region.id);
   const sim = createModel(network, population, { tripRate: region.demand?.tripRate, choice: region.demand?.choice });
   const densityCells = Array.isArray(population?.cells) ? population.cells.filter(c => Number.isFinite(+c.lon) && Number.isFinite(+c.lat) && Number.isFinite(+c.density) && +c.density > 0) : [];
   const maskCells = Array.isArray(population?.maskCells) ? population.maskCells.filter(c => c.geometry?.type === 'Polygon' && Number.isFinite(+c.density)) : [];
@@ -65,8 +73,9 @@ async function startApp() {
   }
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
-  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftWaypoints: [], draftRing: false, draftMove: false, movingDraftIndex: null, editingRouteId: null, draftName: 'M1', draftMode: 'metro', draftVehicle: 'metro6', draftAlignment: 'tunnel', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 6, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, history: [], sharePreview: null, compareSlotId: null, compareName: '', challenge: null, mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
-  let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0;
+  const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftWaypoints: [], draftRing: false, draftMove: false, movingDraftIndex: null, editingRouteId: null, draftName: 'M1', draftMode: 'metro', draftVehicle: 'metro6', draftAlignment: 'tunnel', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 6, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, budgetMode: false, budgetSummary: null, history: [], sharePreview: null, compareSlotId: null, compareName: '', challenge: null, challengeOdMinutes: null, mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', flowsVisible: false, flowsCrowding: false, layerCompare: false, travelOrigin: null, travel: null, mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
+  let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0, flowsStatsKey = null, travelRevision = 0;
+  const zoneIndexById = new Map((population?.zones || []).map((zone, index) => [zone.id, index]));
   let vehiclesActive = false, lastVehicleCount = 0;
 
   const isDebug = typeof location !== 'undefined' && new URLSearchParams(location.search).get('debug') === '1';
@@ -319,14 +328,62 @@ async function startApp() {
     $('heatmap-legend').hidden = !state.populationVisible;
     $('planning-layer').value = state.activeLayer;
     $('heatmap-legend').dataset.layer = state.activeLayer;
-    const isAccess = state.activeLayer === 'access';
-    $('heatmap-caption').textContent = isAccess ? t('bottom.accessCaption') : t('bottom.densityCaption', { year: population?.source?.year || '2021', source: population?.source?.shortName || t('bottom.densitySource') });
-    $('layer-legend-title').textContent = isAccess ? t('bottom.accessLegend') : t('bottom.densityLegend');
-    $('layer-legend-min').textContent = '0';
-    $('layer-legend-max').textContent = isAccess ? t('bottom.accessMax') : `${fmtNumber(8000)}+`;
-    for (const [id, layer] of [['city-population-fill', 'shared'], ['population-grid-fill', 'population'], ['city-population-outline', 'shared'], ['access-grid-fill', 'access']]) {
-      if (map?.getLayer(id)) map.setLayoutProperty(id, 'visibility', state.populationVisible && (layer === 'shared' || state.activeLayer === layer) ? 'visible' : 'none');
+    $('heatmap-legend').dataset.compare = state.layerCompare && (state.activeLayer === 'travel' || state.activeLayer === 'winners') ? '1' : '0';
+    const note = $('layer-legend-note');
+    const compareRow = $('layer-compare-row');
+    const crowdRow = $('flows-crowd-row');
+    if ($('flows-toggle')) $('flows-toggle').checked = state.flowsVisible;
+    if ($('flows-crowd-toggle')) $('flows-crowd-toggle').checked = state.flowsCrowding;
+    if ($('layer-compare-toggle')) $('layer-compare-toggle').checked = state.layerCompare;
+    if (crowdRow) crowdRow.hidden = !state.flowsVisible;
+    if (compareRow) compareRow.hidden = !(state.activeLayer === 'travel' || state.activeLayer === 'winners');
+    let caption = t('bottom.densityCaption', { year: population?.source?.year || '2021', source: population?.source?.shortName || t('bottom.densitySource') });
+    let title = t('bottom.densityLegend');
+    let min = '0';
+    let max = `${fmtNumber(8000)}+`;
+    let noteText = '';
+    if (state.activeLayer === 'access') {
+      caption = t('bottom.accessCaption');
+      title = t('bottom.accessLegend');
+      max = t('bottom.accessMax');
+    } else if (state.activeLayer === 'winners') {
+      caption = t('bottom.winnersCaption');
+      title = t('bottom.winnersLegend');
+      min = t('bottom.winnersMin');
+      max = t('bottom.winnersMax');
+    } else if (state.activeLayer === 'travel') {
+      const name = state.travelOrigin?.name || t('context.fallback');
+      caption = state.travelOrigin ? t('bottom.travelCaption', { name }) : t('bottom.travelNeedOrigin');
+      title = state.layerCompare ? t('bottom.travelCompareLegend') : t('bottom.travelLegend');
+      if (state.layerCompare) { min = t('bottom.travelSavedMin'); max = t('bottom.travelSavedMax'); }
+      else { min = '0'; max = t('bottom.travelMax'); }
+      if (state.travel) noteText = t('bottom.travelReach', { n30: format(state.travel.residents30), n45: format(state.travel.residents45) });
     }
+    if (state.flowsVisible) caption = t('bottom.flowsCaption');
+    $('heatmap-caption').textContent = caption;
+    $('layer-legend-title').textContent = title;
+    $('layer-legend-min').textContent = min;
+    $('layer-legend-max').textContent = max;
+    if (note) { note.hidden = !noteText; note.textContent = noteText; }
+    const fillLayers = [
+      ['city-population-fill', 'shared'],
+      ['population-grid-fill', 'population'],
+      ['city-population-outline', 'shared'],
+      ['access-grid-fill', 'access'],
+      ['insight-grid-fill', 'insight'],
+    ];
+    for (const [id, layer] of fillLayers) {
+      if (!map?.getLayer(id)) continue;
+      const insight = state.activeLayer === 'winners' || state.activeLayer === 'travel';
+      const show = state.populationVisible && (
+        layer === 'shared'
+        || (layer === 'insight' && insight)
+        || (layer !== 'insight' && state.activeLayer === layer)
+      );
+      map.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none');
+    }
+    applyFlowLayerVisibility();
+    applyInsightPaint();
   }
   const { modal, closeModal, confirmDialog } = createModal($);
 
@@ -507,11 +564,19 @@ async function startApp() {
       'fill-opacity': ['interpolate', ['linear'], ['zoom'], 9, .52, 11, .56, 13, .72, 18, .64],
       'fill-antialias': true,
     } }, beneathRoads);
+    map.addSource('insight-grid', { type: 'geojson', data: featureCollection([]) });
+    map.addLayer({ id: 'insight-grid-fill', type: 'fill', source: 'insight-grid', layout: { visibility: 'none' }, paint: {
+      'fill-color': '#4f9a7a',
+      'fill-opacity': ['interpolate', ['linear'], ['zoom'], 9, .48, 11, .55, 13, .68, 18, .6],
+      'fill-antialias': true,
+    } }, beneathRoads);
     map.addLayer({ id: 'city-population-outline', type: 'line', source: 'city-population', layout: { visibility: visible }, paint: {
       'line-color': themeMedia.matches ? '#8ab7bd' : '#5b8990',
       'line-width': ['interpolate', ['linear'], ['zoom'], 9, .8, 15, 1.8],
       'line-opacity': .77,
     } }, beneathRoads);
+    map.addSource('flow-bands', { type: 'geojson', data: featureCollection([]) });
+    map.addSource('flow-stops', { type: 'geojson', data: featureCollection([]) });
     map.addSource('network-routes', { type: 'geojson', data: featureCollection([]) });
     map.addSource('selected-route', { type: 'geojson', data: featureCollection([]) });
     map.addSource('network-stops', { type: 'geojson', data: featureCollection([]) });
@@ -526,6 +591,15 @@ async function startApp() {
     map.addSource('vehicles', { type: 'geojson', data: featureCollection([]) });
     map.addLayer({ id: 'route-halo', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 5, 17, 9], 'line-opacity': ['case', ['==', ['get', 'active'], false], 0, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.08, 11, 0.15, 14, 0.5, 17, 0.65], ['interpolate', ['linear'], ['zoom'], 9, 0.35, 11, 0.45, 14, 0.65, 17, 0.75]] } }, before);
     map.addLayer({ id: 'routes', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 1.0, 11, 1.15, 13, 2.0, 17, 4.0], ['interpolate', ['linear'], ['zoom'], 9, 1.8, 11, 1.8, 13, 2.5, 17, 4.5]], 'line-opacity': ['case', ['==', ['get', 'active'], false], 0.08, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.25, 11, 0.25, 13, 0.45, 17, 0.70], ['interpolate', ['linear'], ['zoom'], 9, 0.85, 11, 0.85, 13, 0.88, 17, 0.92]] } }, before);
+    map.addLayer({ id: 'flow-band-halo', type: 'line', source: 'flow-bands', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'sort'] }, paint: { 'line-color': '#ffffff', 'line-width': flowWidthExpression(), 'line-opacity': 0.55, 'line-gap-width': 0 } }, before);
+    map.addLayer({ id: 'flow-bands', type: 'line', source: 'flow-bands', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'sort'] }, paint: { 'line-color': modeColorExpression(), 'line-width': flowWidthExpression(), 'line-opacity': 0.88 } }, before);
+    map.addLayer({ id: 'flow-stops', type: 'circle', source: 'flow-stops', layout: { visibility: 'none' }, paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, ['min', 8, ['+', 2, ['*', 0.04, ['sqrt', ['get', 'boardings']]]]], 15, ['min', 18, ['+', 3, ['*', 0.08, ['sqrt', ['get', 'boardings']]]]]],
+      'circle-color': themeMedia.matches ? '#e4f5f7' : '#163b48',
+      'circle-opacity': 0.82,
+      'circle-stroke-color': '#fff',
+      'circle-stroke-width': 1.2,
+    } }, before);
     map.addLayer({ id: 'selected-halo', type: 'line', source: 'selected-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': themeMedia.matches ? '#ffffff' : '#10212b', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 7, 15, 12], 'line-opacity': themeMedia.matches ? 0.98 : 0.6 } }, before);
     map.addLayer({ id: 'selected-line', type: 'line', source: 'selected-route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 4, 15, 8], 'line-opacity': .95 } }, before);
     map.addLayer({ id: 'all-stops', type: 'circle', source: 'network-stops', minzoom: 13.1, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 2.2, 17, 5], 'circle-color': '#fff', 'circle-stroke-color': '#71879b', 'circle-stroke-width': 1.2, 'circle-opacity': .86 } });
@@ -572,6 +646,118 @@ async function startApp() {
       button.title = t(visible ? `bottom.hide${modeKey}Title` : `bottom.show${modeKey}Title`);
     });
     if (state.playing || vehiclesActive) renderVehicles();
+    applyFlowLayerVisibility();
+  }
+  const routeOpacityPaint = ['case', ['==', ['get', 'active'], false], 0.08, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.25, 11, 0.25, 13, 0.45, 17, 0.70], ['interpolate', ['linear'], ['zoom'], 9, 0.85, 11, 0.85, 13, 0.88, 17, 0.92]];
+  const routeHaloOpacityPaint = ['case', ['==', ['get', 'active'], false], 0, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.08, 11, 0.15, 14, 0.5, 17, 0.65], ['interpolate', ['linear'], ['zoom'], 9, 0.35, 11, 0.45, 14, 0.65, 17, 0.75]];
+  function applyFlowLayerVisibility() {
+    const show = state.flowsVisible && !!state.stats?.flows;
+    for (const id of ['flow-bands', 'flow-band-halo', 'flow-stops']) {
+      if (map?.getLayer(id)) map.setLayoutProperty(id, 'visibility', show ? 'visible' : 'none');
+    }
+    if (map?.getLayer('flow-bands')) {
+      map.setPaintProperty('flow-bands', 'line-color', state.flowsCrowding ? vcColorExpression(themeMedia.matches) : modeColorExpression());
+    }
+    if (map?.getLayer('routes')) {
+      map.setPaintProperty('routes', 'line-opacity', show ? 0.18 : routeOpacityPaint);
+      map.setPaintProperty('route-halo', 'line-opacity', show ? 0.08 : routeHaloOpacityPaint);
+    }
+  }
+  function applyInsightPaint() {
+    if (!map?.getLayer('insight-grid-fill')) return;
+    const dark = themeMedia.matches;
+    if (state.activeLayer === 'winners') {
+      map.setPaintProperty('insight-grid-fill', 'fill-color', [
+        'interpolate', ['linear'], ['get', 'accessDelta'],
+        -40, dark ? '#a95266' : '#b44a5a',
+        0, dark ? '#d6c4ad' : '#e8d5c0',
+        40, dark ? '#4c9183' : '#4f9a7a',
+      ]);
+    } else if (state.activeLayer === 'travel' && state.layerCompare) {
+      map.setPaintProperty('insight-grid-fill', 'fill-color', [
+        'interpolate', ['linear'], ['get', 'minutesSaved'],
+        -20, dark ? '#a95266' : '#b44a5a',
+        0, dark ? '#d6c4ad' : '#e8d5c0',
+        20, dark ? '#4c9183' : '#4f9a7a',
+      ]);
+    } else if (state.activeLayer === 'travel') {
+      map.setPaintProperty('insight-grid-fill', 'fill-color', [
+        'match', ['get', 'travelBand'],
+        10, dark ? '#245c59' : '#2f6f6a',
+        20, dark ? '#4c9183' : '#5ea08a',
+        30, dark ? '#d6b476' : '#d6c36a',
+        40, dark ? '#ca816b' : '#d98a5a',
+        50, dark ? '#a95266' : '#b44a5a',
+        60, dark ? '#855057' : '#7a3d55',
+        dark ? '#2a343a' : '#d7dde2',
+      ]);
+    }
+  }
+  function rebuildFlowLayers() {
+    if (!map?.getSource('flow-bands')) return;
+    const flows = state.stats?.flows;
+    const key = flows ? `${flows.boardingsTotal}|${flows.passengerKm}|${flows.refined}|${flows.segmentDaily?.length}` : 'none';
+    if (key === flowsStatsKey && state.flowsVisible) {
+      applyFlowLayerVisibility();
+      return;
+    }
+    flowsStatsKey = key;
+    if (!flows) {
+      setSourceData('flow-bands', featureCollection([]));
+      setSourceData('flow-stops', featureCollection([]));
+      applyFlowLayerVisibility();
+      return;
+    }
+    const lookup = id => stop(id);
+    requestAnimationFrame(() => {
+      if (state.stats?.flows !== flows) return;
+      setSourceData('flow-bands', flowBandCollection(flows, lookup));
+      setSourceData('flow-stops', flowStopCollection(flows, lookup));
+      applyFlowLayerVisibility();
+    });
+  }
+  function rebuildInsightGrid() {
+    if (!map?.getSource('insight-grid')) return;
+    requestAnimationFrame(() => {
+      if (state.activeLayer === 'winners') {
+        const access = state.stats?.access45 || state.stats?.zoneStats?.map(z => z.access45) || [];
+        const base = state.baseline?.access45 || state.baseline?.zoneStats?.map(z => z.access45) || access;
+        setSourceData('insight-grid', paintFlowCells(maskFeatures, zoneByCellId, zoneIndexById, access, base));
+      } else if (state.activeLayer === 'travel' && state.travel) {
+        setSourceData('insight-grid', paintTravelCells(
+          maskFeatures, zoneByCellId, zoneIndexById,
+          state.travel.zoneClock, state.travel.baselineClock, state.layerCompare,
+        ));
+      } else {
+        setSourceData('insight-grid', featureCollection([]));
+      }
+      applyInsightPaint();
+    });
+  }
+  function requestTravelFrom(pos, name) {
+    state.travelOrigin = { pos: pos.slice(), name: name || t('context.fallback') };
+    state.activeLayer = 'travel';
+    state.populationVisible = true;
+    const revision = ++travelRevision;
+    const run = () => {
+      const scenario = sim.travelFrom(pos, network, state.customRoutes, state.customStops, state.overrides, state.daypart);
+      const baseline = sim.travelFrom(pos, network, [], [], {}, state.daypart);
+      if (revision !== travelRevision) return;
+      state.travel = {
+        zoneClock: scenario.zoneClock,
+        baselineClock: baseline.zoneClock,
+        zoneGc: scenario.zoneGc,
+        residents30: scenario.residents30,
+        residents45: scenario.residents45,
+        searchMs: scenario.searchMs,
+        buildMs: scenario.buildMs,
+      };
+      rebuildInsightGrid();
+      renderPopulationControl();
+      $('layers-menu').open = true;
+    };
+    // Keep the click handler snappy; graph+search stays under the 150 ms worker target on the laptop budget.
+    setTimeout(run, 0);
   }
   function renderNetwork() {
     if (!map.getSource('network-routes')) return;
@@ -986,6 +1172,7 @@ async function startApp() {
         ${route ? `<button type="button" role="menuitem" data-context-action="route">${escape(t('context.inspectLine', { name: route.name }))}</button>` : ''}
         ${nearby && distance <= 200 ? `<button type="button" role="menuitem" data-context-action="inspect-stop">${escape(t('context.inspectStop', { name: nearby.name }))}</button>` : ''}
         ${canAddStop ? `<button type="button" role="menuitem" data-context-action="add-stop">${escape(t('context.add', { name: nearby.name }))}</button>` : ''}
+        <button type="button" role="menuitem" data-context-action="travel">${escape(t('context.travelFrom'))}</button>
         <button type="button" role="menuitem" data-context-action="metro" class="map-context-primary">${escape(state.tool === 'metro' ? t('context.addStation') : t('context.startMetro'))}</button>
         <button type="button" role="menuitem" data-context-action="ruler">${escape(rulerPoints.length ? rulerActive ? t('context.addRuler') : t('context.extendRuler') : t('context.startRuler'))}</button>
         ${rulerActive ? `<button type="button" role="menuitem" data-context-action="ruler-finish">${escape(t('context.finishRuler'))}</button>` : ''}
@@ -1212,7 +1399,45 @@ async function startApp() {
     renderDraft();
     toast(t('toast.editAlignment'));
   }
+  function activeChallenge() {
+    return challengeCatalog.find(item => item.id === (state.challenge || challengeBook.active)) || null;
+  }
+  function refreshBudget() {
+    const challenge = activeChallenge();
+    const cap = challenge?.constraints?.budgetPLN
+      ?? region.budget?.capitalPLN
+      ?? capitalCosts.defaultBudgetPLN;
+    state.budgetSummary = summarizeBudget({
+      customRoutes: state.customRoutes,
+      overrides: state.overrides,
+      publishedRoutes: network.routes,
+      stopLookup: stop,
+      km: sim.km,
+      resolveService: (route, daypart) => sim.resolveService(route, daypart),
+      daypart: state.daypart,
+      stats: state.stats,
+      baseline: state.baseline,
+      budgetCap: cap,
+      region,
+    });
+    const wrap = $('pulse-budget-wrap');
+    const pulse = $('pulse-budget');
+    if (wrap) wrap.hidden = !state.budgetMode;
+    if (pulse && state.budgetMode && state.budgetSummary) {
+      pulse.textContent = `${compactMillions(state.budgetSummary.capital)} / ${compactMillions(state.budgetSummary.budgetCap)}`;
+      pulse.classList.toggle('warning', state.budgetSummary.overBudget);
+      pulse.title = t('results.budgetPulseTitle', {
+        spent: format(Math.round(state.budgetSummary.capital)),
+        budget: format(Math.round(state.budgetSummary.budgetCap)),
+      });
+    }
+  }
   function enterLineTool(mode = 'metro') {
+    const challenge = activeChallenge();
+    if (challenge && !challengeAllowsMode(challenge, mode)) return toast(t('toast.challengeMode'));
+    if (challenge?.constraints?.maxNewLines != null && countPlayerLines(state) >= challenge.constraints.maxNewLines && !state.editingRouteId) {
+      return toast(t('toast.challengeLines'));
+    }
     const spec = modes[mode] || modes.metro;
     state.tool = 'metro';
     state.selected = null;
@@ -1238,6 +1463,56 @@ async function startApp() {
     renderSelection();
     renderDraft();
     toast(t('toast.place'));
+  }
+  function renderChallenges() {
+    const section = $('challenge-section');
+    const host = $('challenge-list');
+    const progress = $('challenge-progress');
+    if (!section || !host) return;
+    section.hidden = !challengeCatalog.length;
+    $('challenge-count').textContent = challengeCatalog.length ? `(${challengeCatalog.length})` : '';
+    host.innerHTML = challengeCatalog.map(item => {
+      const earned = challengeBook.stars?.[item.id] || 0;
+      const active = (state.challenge || challengeBook.active) === item.id;
+      return `<article class="challenge-card${active ? ' is-active' : ''}"><div class="section-title"><h3>${escape(localize(item.title))}</h3><span class="value">${'★'.repeat(earned)}${'☆'.repeat(Math.max(0, (item.stars?.length || 0) - earned))}</span></div><p>${escape(localize(item.brief))}</p><button type="button" data-challenge-id="${escape(item.id)}">${escape(active ? t('network.challengeActive') : t('network.challengeStart'))}</button></article>`;
+    }).join('');
+    host.querySelectorAll('[data-challenge-id]').forEach(button => {
+      button.onclick = () => startChallenge(button.dataset.challengeId);
+    });
+    const challenge = activeChallenge();
+    if (!challenge || !progress) { if (progress) progress.hidden = true; return; }
+    const verdict = evaluateChallenge(challenge, {
+      stats: state.stats,
+      baseline: state.baseline,
+      budget: state.budgetSummary || null,
+      odMinutes: state.challengeOdMinutes ?? null,
+    });
+    progress.hidden = false;
+    progress.innerHTML = `<div class="section-title"><h3>${escape(localize(challenge.title))}</h3><span class="value">${verdict.stars}★</span></div>${verdict.results.map(item => `<p class="${item.ok ? 'positive' : ''}">${item.ok ? '✓' : '·'} ${escape(localize(item.objective.label) || item.objective.type)}</p>`).join('')}${verdict.overBudget ? `<p class="model-notice">${escape(t('network.challengeOverBudget'))}</p>` : ''}${verdict.complete ? `<p class="positive">${escape(t('network.challengeDone'))}</p>` : ''}`;
+    if (verdict.stars > (challengeBook.stars[challenge.id] || 0)) {
+      challengeBook.stars[challenge.id] = verdict.stars;
+      saveChallengeBook(region.id, challengeBook);
+    }
+  }
+  function startChallenge(id) {
+    const challenge = challengeCatalog.find(item => item.id === id);
+    if (!challenge) return;
+    remember();
+    Object.assign(state, empty());
+    state.challenge = id;
+    state.daypart = 'peak';
+    challengeBook.active = id;
+    saveChallengeBook(region.id, challengeBook);
+    if (typeof state.budgetMode !== 'undefined') state.budgetMode = true;
+    else state.budgetMode = true;
+    rebuildRouteCache();
+    persist();
+    renderList();
+    renderInspector();
+    renderMap();
+    renderChallenges();
+    scheduleStats();
+    toast(localize(challenge.title));
   }
   function renderTemplates() {
     const host = $('template-list');
@@ -1301,7 +1576,13 @@ async function startApp() {
       scheduleStats();
     };
   }
-  function renderStats() { renderResults(ctx); renderCompare(); }
+  function renderStats() {
+    renderResults(ctx);
+    renderCompare();
+    renderChallenges();
+    rebuildFlowLayers();
+    if (state.activeLayer === 'winners' || state.activeLayer === 'travel') rebuildInsightGrid();
+  }
   function enterMetroTool() { enterLineTool('metro'); }
 
   let statsPool = null, statsRevision = 0, workerUnavailable = false, statsBusy = false, pendingStats = null;
@@ -1536,7 +1817,9 @@ async function startApp() {
     const regionName = localize(region.name) || region.name?.en || '';
     modal(`<span class="chip">${escape(t('data.chip'))}</span><h2>${escape(t('data.title'))}</h2><p>${escape(t('data.area', { count: region.municipalities.length, name: regionName }))}</p>
       <div class="modal-sources">${feedNotes}${populationCredit}<p>${escape(t('data.access'))}</p><p>${escape(t('data.concepts'))}</p><p><b>${escape(t('data.basemap'))}</b> — <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>, <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>.</p></div>
-      <h3>${escape(t('data.how'))}</h3><p>${escape(demandExplanation)} ${escape(t('data.method'))}</p><p>${escape(t('data.satisfaction'))}</p><p>${escape(t('data.shapes'))}</p><p><a href="${escape(window.TRANSIT_URLS.network)}" target="_blank">${escape(t('data.openNetwork'))}</a> · <a href="${escape(window.TRANSIT_URLS.population)}" target="_blank">${escape(t('data.openPopulation'))}</a></p>`);
+      <h3>${escape(t('data.how'))}</h3><p>${escape(demandExplanation)} ${escape(t('data.method'))}</p><p>${escape(t('data.satisfaction'))}</p><p>${escape(t('data.shapes'))}</p>
+      <h3>${escape(t('data.costsTitle'))}</h3><p>${escape(t('data.costs'))}</p>
+      <p><a href="${escape(window.TRANSIT_URLS.network)}" target="_blank">${escape(t('data.openNetwork'))}</a> · <a href="${escape(window.TRANSIT_URLS.population)}" target="_blank">${escape(t('data.openPopulation'))}</a></p>`);
   }
   function openGuide() {
     const regionName = localize(region.shortName) || region.shortName?.en || '';
@@ -1717,7 +2000,27 @@ async function startApp() {
     const tab = e.target.closest('[data-panel-tab]')?.dataset.panelTab;
     if (tab) { setPanelTab(tab); introSync(); }
   };
-  $('planning-layer').onchange = e => { closeContextMenu(); state.activeLayer = e.target.value; renderPopulationControl(); };
+  $('planning-layer').onchange = e => {
+    closeContextMenu();
+    state.activeLayer = e.target.value;
+    if (state.activeLayer === 'winners' || state.activeLayer === 'travel') rebuildInsightGrid();
+    renderPopulationControl();
+  };
+  $('flows-toggle')?.addEventListener('change', e => {
+    state.flowsVisible = e.target.checked;
+    rebuildFlowLayers();
+    applyMapModeVisibility();
+    renderPopulationControl();
+  });
+  $('flows-crowd-toggle')?.addEventListener('change', e => {
+    state.flowsCrowding = e.target.checked;
+    applyFlowLayerVisibility();
+  });
+  $('layer-compare-toggle')?.addEventListener('change', e => {
+    state.layerCompare = e.target.checked;
+    rebuildInsightGrid();
+    renderPopulationControl();
+  });
   $('map-context-menu').oncontextmenu = e => e.preventDefault();
   $('map-context-menu').onclick = e => {
     const action = e.target.closest('[data-context-action]')?.dataset.contextAction;
@@ -1727,6 +2030,12 @@ async function startApp() {
     if (action === 'route' && route) { finishRuler(); selectRoute(route.id); }
     else if (action === 'inspect-stop' && nearby) { finishRuler(); inspectStop(nearby.id); }
     else if (action === 'add-stop' && nearby) { finishRuler(); addExistingStop(nearby.pos); }
+    else if (action === 'travel') {
+      finishRuler();
+      const cell = maskCells.find(item => pointInGeometry(pos, item.geometry));
+      const city = cityBoundaries.features.find(item => pointInGeometry(pos, item.geometry))?.properties?.name;
+      requestTravelFrom(pos, nearby?.name || city || cell?.city || t('context.fallback'));
+    }
     else if (action === 'move-stop' && draftIndex >= 0) { finishRuler(); state.movingDraftIndex = draftIndex; renderInspector(); toast(t('toast.move', { name: state.draft[draftIndex].name })); }
     else if (action === 'remove-stop' && draftIndex >= 0) { finishRuler(); const [removed] = state.draft.splice(draftIndex, 1); state.movingDraftIndex = null; renderInspector(); renderDraft(); toast(t('toast.removed', { name: removed.name })); }
     else if (action === 'metro') { finishRuler(); if (state.tool !== 'metro') enterMetroTool(); addDraftStation(pos); }
@@ -1765,6 +2074,11 @@ async function startApp() {
     if (target.hasAttribute('data-clear-selection')) { clearSelection(); return; }
     if (target.dataset.inspectRoute) { selectRoute(target.dataset.inspectRoute); return; }
     if (target.dataset.inspectStop) { inspectStop(target.dataset.inspectStop); return; }
+    if (target.dataset.travelFrom) {
+      const station = stop(target.dataset.travelFrom);
+      if (station) requestTravelFrom(station.pos, station.name);
+      return;
+    }
     if (target.dataset.draftRemove != null) { state.draft.splice(Number(target.dataset.draftRemove), 1); state.movingDraftIndex = null; renderInspector(); renderDraft(); return; }
     const r = routeById(state.selected); if (!r) return;
     const ids = r.stopIds.slice(); let i, j;
@@ -2084,8 +2398,8 @@ async function startApp() {
     if (isDebug) window.__DEBUG__.lastVehicleCount = lastVehicleCount;
     setSourceData('vehicles', featureCollection(features));
   }
-  Object.assign(ctx, { $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, editPlayerAlignment, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, focusFlow, remember, changed, toast, map, enterMetroTool, enterLineTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry, draftCatchment, confirmDialog, nextDraftName });
-  renderTemplates(); renderList(); renderInspector();
+  Object.assign(ctx, { $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, editPlayerAlignment, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, focusFlow, remember, changed, toast, map, enterMetroTool, enterLineTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry, draftCatchment, confirmDialog, nextDraftName, refreshBudget });
+  renderTemplates(); renderChallenges(); renderList(); renderInspector();
   document.addEventListener('pointerdown', e => {
     if (intro.active && intro.index === 0) return;
     if (!$('layers-menu').contains(e.target)) $('layers-menu').open = false;

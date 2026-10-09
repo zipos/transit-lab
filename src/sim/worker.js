@@ -1,4 +1,4 @@
-import { createModel } from './model.js?v=2026-09-28-builder';
+import { createModel } from './model.js?v=2026-10-09-layers';
 
 let model;
 const sliceBaseline = new Map();
@@ -9,8 +9,26 @@ let armed = false;
 export function runJob(data, postMessage) {
   const finish = () => {
     const daypart = data.daypart || 'peak';
-    const partial = data.originEnd != null;
     const live = () => !data.trackRevision || latestRevision === data.revision;
+    if (data.job === 'travelTime') {
+      if (!live()) return;
+      const pos = data.pos;
+      const started = performance.now();
+      const scenario = model.travelFrom(pos, model.network, data.customRoutes || [], data.customStops || [], data.overrides || {}, daypart);
+      const baseline = data.compareBaseline
+        ? model.travelFrom(pos, model.network, data.compare?.customRoutes || [], data.compare?.customStops || [], data.compare?.overrides || {}, daypart)
+        : model.travelFrom(pos, model.network, [], [], {}, daypart);
+      if (!live()) return;
+      postMessage({
+        revision: data.revision,
+        job: 'travelTime',
+        travel: scenario,
+        travelBaseline: baseline,
+        totalMs: Math.round(performance.now() - started),
+      });
+      return;
+    }
+    const partial = data.originEnd != null;
     const hooks = {
       originStart: data.originStart || 0,
       originEnd: partial ? data.originEnd : undefined,

@@ -1,0 +1,115 @@
+{
+  "scheme": "objectives",
+  "budgetDefaultPLN": 8000000000,
+  "challenges": [
+    {
+      "id": "gzm-katowice-sosnowiec",
+      "title": { "pl": "Most między centrami", "en": "Bridge the centres" },
+      "brief": {
+        "pl": "Połącz centrum Katowic z centrum Sosnowca tak, by podróż trwała najwyżej 15 minut. Jedna nowa linia metra lub tramwaju, budżet 4 mld zł.",
+        "en": "Link central Katowice to central Sosnowiec in at most 15 minutes. One new metro or tram line, 4 billion zł budget."
+      },
+      "constraints": {
+        "budgetPLN": 4000000000,
+        "modes": ["metro", "tram"],
+        "maxNewLines": 1,
+        "allowEditingPublished": true
+      },
+      "objectives": [
+        {
+          "type": "odTime",
+          "from": [19.0237, 50.2598],
+          "to": [19.1286, 50.2800],
+          "maxMinutes": 15,
+          "label": { "pl": "Katowice ↔ Sosnowiec ≤ 15 min", "en": "Katowice ↔ Sosnowiec ≤ 15 min" }
+        },
+        { "type": "tripsDelta", "min": 5000, "label": { "pl": "+5 000 podróży", "en": "+5,000 trips" } }
+      ],
+      "stars": [1, 2]
+    },
+    {
+      "id": "gzm-gliwice-katowice",
+      "title": { "pl": "Korytarz Gliwice–Katowice", "en": "Gliwice–Katowice corridor" },
+      "brief": {
+        "pl": "Przyspiesz korytarz Gliwice–Katowice. Możesz budować metro, tramwaj albo kolej. Budżet 8 mld zł.",
+        "en": "Speed up the Gliwice–Katowice corridor. Metro, tram or rail allowed. 8 billion zł budget."
+      },
+      "constraints": {
+        "budgetPLN": 8000000000,
+        "modes": ["metro", "tram", "rail"],
+        "maxNewLines": 2,
+        "allowEditingPublished": true
+      },
+      "objectives": [
+        {
+          "type": "odTime",
+          "from": [18.6700, 50.2945],
+          "to": [19.0237, 50.2598],
+          "maxMinutes": 35,
+          "label": { "pl": "Gliwice ↔ Katowice ≤ 35 min", "en": "Gliwice ↔ Katowice ≤ 35 min" }
+        },
+        { "type": "modeShareDelta", "min": 0.3, "label": { "pl": "+0,3 pkt udziału", "en": "+0.3 pts share" } },
+        { "type": "tripsDelta", "min": 8000, "label": { "pl": "+8 000 podróży", "en": "+8,000 trips" } }
+      ],
+      "stars": [1, 2, 3]
+    },
+    {
+      "id": "gzm-underserved",
+      "title": { "pl": "Zapomniane przedmieście", "en": "The overlooked suburb" },
+      "brief": {
+        "pl": "Podnieś dostęp do szybkiego transportu w słabiej obsłużonych gminach. Do 2 nowych linii; budżet 3 mld zł.",
+        "en": "Raise rapid-transit access in thinner-served municipalities. Up to 2 new lines; 3 billion zł budget."
+      },
+      "constraints": {
+        "budgetPLN": 3000000000,
+        "modes": ["tram", "bus", "rail"],
+        "maxNewLines": 2,
+        "allowEditingPublished": true
+      },
+      "objectives": [
+        { "type": "coverage", "minDelta": 40000, "label": { "pl": "+40 000 w 800 m od szybkiego transportu", "en": "+40,000 within 800 m of rapid transit" } },
+        { "type": "municipalityTrips", "municipality": "Mikołów", "min": 1200, "label": { "pl": "Mikołów ≥ 1 200 podróży", "en": "Mikołów ≥ 1,200 trips" } }
+      ],
+      "stars": [1, 2]
+    },
+    {
+      "id": "gzm-tram-frequency",
+      "title": { "pl": "Częstszy tramwaj", "en": "More trams, carefully" },
+      "brief": {
+        "pl": "Podwój częstotliwość tramwajów bez nowej infrastruktury. Tylko edycja opublikowanych linii. Budżet operacyjny liczy flotę.",
+        "en": "Double tram frequency without new track. Published lines only. The budget tracks the fleet."
+      },
+      "constraints": {
+        "budgetPLN": 1500000000,
+        "modes": ["tram"],
+        "maxNewLines": 0,
+        "allowEditingPublished": true,
+        "forbidNewInfrastructure": true
+      },
+      "objectives": [
+        { "type": "tripsDelta", "min": 15000, "label": { "pl": "+15 000 podróży", "en": "+15,000 trips" } },
+        { "type": "maxLoad", "maxVc": 1.0, "label": { "pl": "Żaden odcinek > 100% w szczycie", "en": "No segment over 100% at peak" } }
+      ],
+      "stars": [1, 2]
+    },
+    {
+      "id": "gzm-cheap-coverage",
+      "title": { "pl": "Tani zasięg", "en": "Cheap coverage" },
+      "brief": {
+        "pl": "Jedna linia, która dodaje co najmniej 50 000 mieszkańców w 800 m od tramwaju, kolei lub metra. Koszt na nowego pasażera ma być niski.",
+        "en": "One line that puts at least 50,000 more residents within 800 m of tram, rail or metro. Keep cost per new rider low."
+      },
+      "constraints": {
+        "budgetPLN": 2500000000,
+        "modes": ["tram", "bus", "rail"],
+        "maxNewLines": 1,
+        "allowEditingPublished": false
+      },
+      "objectives": [
+        { "type": "coverage", "minDelta": 50000, "label": { "pl": "+50 000 w zasięgu szybkiego transportu", "en": "+50,000 in rapid catchment" } },
+        { "type": "costPerRider", "max": 80000, "label": { "pl": "Koszt / nowego pasażera ≤ 80 tys. zł", "en": "Cost / new daily rider ≤ 80k zł" } }
+      ],
+      "stars": [1, 2]
+    }
+  ]
+}

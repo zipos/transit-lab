@@ -415,6 +415,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       from: Math.round(estimatedDemand * (sums.zoneFrom?.[index] || 0) / Math.max(1, sums.demandTotal)),
       to: Math.round(estimatedDemand * (sums.zoneTo?.[index] || 0) / Math.max(1, sums.demandTotal)),
       journey: sums.zoneFrom?.[index] > 0 ? +(sums.zoneJourney[index] / sums.zoneFrom[index]).toFixed(2) : 0,
+      access45: +(sums.zoneAccess?.[index] || 0).toFixed(2),
     }));
     return {
       demandPopulation: residentTotal,
@@ -434,6 +435,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       accessShare: +(100 * sums.accessResidents / Math.max(1, residentTotal)).toFixed(1),
       cityStats,
       zoneStats,
+      access45: zoneStats.map(zone => zone.access45),
       flows: sums.flow ? describeFlows(sums.flow, sums.demandTotal) : null,
     };
   }
@@ -662,6 +664,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         stopIds: stops.map(stop => stop.id),
       },
       zoneFrom: Array(zones.length).fill(0), zoneTo: Array(zones.length).fill(0), zoneJourney: Array(zones.length).fill(0),
+      zoneAccess: Array(zones.length).fill(0),
       local: blankLocal(),
     };
     const targets = [];
@@ -688,14 +691,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const pred = state.pred;
     const heapKeys = state.heapKeys;
     const heapVals = state.heapVals;
-    const originStart = hooks.originStart || 0;
-    const originEnd = hooks.originEnd == null ? zones.length : hooks.originEnd;
-    const span = Math.max(1, originEnd - originStart);
-    const progressStep = Math.max(1, Math.floor(span / 10));
-    let cancelled = false;
-    for (let origin = originStart; origin < originEnd; origin++) {
-      if (hooks.shouldContinue && !hooks.shouldContinue()) { cancelled = true; break; }
-      if (hooks.onProgress && (origin - originStart) % progressStep === 0) hooks.onProgress((origin - originStart) / span);
+    const runSearch = (seedStops) => {
       dist.fill(Infinity, 0, nodeCount);
       pathWait.fill(0, 0, nodeCount);
       pathIvt.fill(0, 0, nodeCount);
@@ -705,10 +701,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       pred.fill(-1, 0, nodeCount);
       let heapSize = 0;
       let remaining = targets.length;
-      const originAccess = zoneStops[origin];
-      for (let n = 0; n < originAccess.length; n++) {
-        const access = originAccess[n][1];
-        const node = originAccess[n][0];
+      for (let n = 0; n < seedStops.length; n++) {
+        const node = seedStops[n][0];
+        const access = seedStops[n][1];
         if (node >= stopCount) continue;
         const seeded = choice.walkWeight * access;
         if (seeded < dist[node]) {
@@ -738,8 +733,63 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
           }
         }
       }
+    };
+    const zoneBest = (destination) => {
+      let best = Infinity, bestNode = -1, bestEgress = 0;
+      const access = zoneStops[destination];
+      for (let n = 0; n < access.length; n++) {
+        if (access[n][0] >= stopCount) continue;
+        const node = stopCount + access[n][0];
+        const gc = dist[node] + choice.walkWeight * access[n][1];
+        if (gc < best) { best = gc; bestNode = node; bestEgress = access[n][1]; }
+      }
+      return { best, bestNode, bestEgress };
+    };
+    if (hooks.travelPos) {
+      const seeds = [];
+      for (let index = 0; index < stopCount; index++) {
+        const minutes = walkMinutes(km(hooks.travelPos, stops[index].pos));
+        if (minutes <= 20) seeds.push([index, minutes]);
+      }
+      seeds.sort((a, b) => a[1] - b[1]);
+      runSearch(seeds.slice(0, 24));
+      const zoneClock = new Float32Array(zones.length);
+      const zoneGc = new Float32Array(zones.length);
+      zoneClock.fill(Infinity);
+      zoneGc.fill(Infinity);
+      let residents30 = 0, residents45 = 0;
+      for (let destination = 0; destination < zones.length; destination++) {
+        const { best, bestNode, bestEgress } = zoneBest(destination);
+        if (!Number.isFinite(best) || boards[bestNode] === 0) continue;
+        const clock = pathIvt[bestNode] + pathWalk[bestNode] + bestEgress + pathWait[bestNode] + boards[bestNode] * choice.boardMinutes + pathAlight[bestNode] * choice.alightMinutes;
+        zoneClock[destination] = clock;
+        zoneGc[destination] = best;
+        if (clock <= 30) residents30 += zoneResidents[destination];
+        if (clock <= 45) residents45 += zoneResidents[destination];
+      }
+      const finished = performance.now();
+      lastTiming = { buildMs: +(built - started).toFixed(1), searchMs: +(finished - built).toFixed(1), nodes: nodeCount, edges: edgeCount };
+      return {
+        zoneClock,
+        zoneGc,
+        residents30: Math.round(residents30),
+        residents45: Math.round(residents45),
+        buildMs: lastTiming.buildMs,
+        searchMs: lastTiming.searchMs,
+      };
+    }
+    const originStart = hooks.originStart || 0;
+    const originEnd = hooks.originEnd == null ? zones.length : hooks.originEnd;
+    const span = Math.max(1, originEnd - originStart);
+    const progressStep = Math.max(1, Math.floor(span / 10));
+    let cancelled = false;
+    for (let origin = originStart; origin < originEnd; origin++) {
+      if (hooks.shouldContinue && !hooks.shouldContinue()) { cancelled = true; break; }
+      if (hooks.onProgress && (origin - originStart) % progressStep === 0) hooks.onProgress((origin - originStart) / span);
+      runSearch(zoneStops[origin]);
       const originCity = zoneCities[origin];
       const local = sums.local[originCity];
+      let accessScore = zoneAttraction[origin];
       for (let destination = 0; destination < zones.length; destination++) {
         if (origin === destination) continue;
         const straight = straightKm[origin][destination];
@@ -755,15 +805,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
           if (sameCity) local.withinWalk += weight;
           continue;
         }
-        let best = Infinity, bestNode = -1, bestEgress = 0;
-        const access = zoneStops[destination];
-        for (let n = 0; n < access.length; n++) {
-          if (access[n][0] >= stopCount) continue;
-          const node = stopCount + access[n][0];
-          const gc = dist[node] + choice.walkWeight * access[n][1];
-          if (gc < best) { best = gc; bestNode = node; bestEgress = access[n][1]; }
-        }
+        const { best, bestNode, bestEgress } = zoneBest(destination);
         if (!Number.isFinite(best) || boards[bestNode] === 0) continue;
+        if (best <= 45) accessScore += zoneAttraction[destination];
         const gcCar = carMinutes(straight, zoneDensity[origin], zoneDensity[destination], choice);
         const gap = choice.lambda * (best - gcCar);
         const share = gap > 40 ? 0 : gap < -40 ? 1 : 1 / (1 + Math.exp(gap));
@@ -809,6 +853,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         sums.zoneTo[destination] += served;
         sums.zoneJourney[origin] += clock * served;
       }
+      sums.zoneAccess[origin] = accessScore;
     }
     if (hooks.onProgress && !cancelled) hooks.onProgress(1);
     const finished = performance.now();
@@ -868,16 +913,24 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
           total.zoneFrom = Array(part.zoneFrom.length).fill(0);
           total.zoneTo = Array(part.zoneTo.length).fill(0);
           total.zoneJourney = Array(part.zoneJourney.length).fill(0);
+          total.zoneAccess = Array(part.zoneFrom.length).fill(0);
         }
         for (let index = 0; index < part.zoneFrom.length; index++) {
           total.zoneFrom[index] += part.zoneFrom[index];
           total.zoneTo[index] += part.zoneTo[index];
           total.zoneJourney[index] += part.zoneJourney[index];
+          total.zoneAccess[index] += part.zoneAccess?.[index] || 0;
         }
       }
     }
     return project(total, partials[0].serviceKm);
   }
-  return { calculate, combinePartials, presentFlows, km, zones, zoneCities, resolveService, timing: () => lastTiming };
+  function travelFrom(pos, network, customRoutes, customStops, overrides, daypart = 'peak') {
+    return calculate(network, customRoutes, customStops, overrides, daypart, { travelPos: pos });
+  }
+  return {
+    calculate, combinePartials, presentFlows, travelFrom, km, zones, zoneCities, zoneIds, zoneResidents, zoneAttraction,
+    resolveService, timing: () => lastTiming,
+  };
   }
 export { createModel, km };

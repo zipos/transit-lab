@@ -65,6 +65,12 @@ Vehicle capacity is seats plus standing at 4 people per square metre. Standing p
 
 The live bus mode uses the 12 m figure. The articulated bus is recorded for a later vehicle-size control. A Solaris press figure of "up to 100" for the Urbino 12 electric is a weight limit, not this 4 people/m² capacity.
 
+## Flow map bands (brief 33)
+
+The passenger-flows layer sums assigned daily segment flow across every pattern that shares the same **undirected stop-pair and mode**, then draws one straight band between those stops. Line width scales with `√daily`. Colour is by mode, or by peak-hour v/c when "Show crowding" is on. Parallel patterns on the same street therefore merge per mode rather than stacking offset ribbons. Station circles use stop boardings from the same flow table. The layer rebuilds only when stats change.
+
+Travel-time maps use a single-origin graph search from the clicked point (walk seeds to nearby stops). Door-to-door clock minutes colour the resident grid in 10-minute bands to 60. Winners/losers colour cells by the change in destination attraction reachable within 45 min generalized cost, scenario versus baseline, accumulated cheaply during the main assignment.
+
 ## Capital and fleet costs (brief 31)
 
 Planning-level unit costs for optional Budget mode. Figures are **nominal PLN millions** unless noted. Price basis is the contract or reporting year of the cited project, not inflated to a common year. Full choices, disagreements >2×, and stop-and-ask items: `docs/decisions/31-cost-sources.md`.
@@ -74,7 +80,7 @@ Where a line capital figure already includes stops/stations, the matching `costP
 | Parameter | Value (PLN) | Year / price basis | Source |
 | --- | ---: | --- | --- |
 | `capitalCostPerKm.metroTunnel` | **340 mln / km** | 2017–2020 contracts | Warsaw M2 extensions, all-in (tunnels + stations, no rolling stock): Trocka 1,070 mln / 3.1 km ≈ 345 mln/km; KJ 1,148 mln / 3.4 km ≈ 337 mln/km. Transit Costs Project: <https://transitcosts.com/warsaw-line-2-extension-to-trocka/>, <https://transitcosts.com/warsaw-line-2-extension-to-kj/>. Central M2 was ~600–980 mln/km (see decision note; >1.5× extensions). |
-| `capitalCostPerKm.metroElevated` | — | — | **stop-and-ask.** No Polish elevated metro project found. Do not invent. |
+| `capitalCostPerKm.metroElevated` | **340 mln / km** (same as tunnel) | interim | **assumption until owner chooses.** No Polish elevated metro found. Budget mode uses the tunnel extension rate so the elevated picker stays playable; replace when a sourced figure exists (`docs/decisions/31-cost-sources.md`). |
 | `capitalCostPerKm.tramSegregated` | **65 mln / km** | 2017 contract / 2023 opening | Kraków Krowodrza Górka–Górka Narodowa: contract 326.2 mln brutto for ~5 km double track (later ~350 mln with extras) → ~65–70 mln/km, segregated with structures/P+R. Magiczny Kraków: <https://www.krakow.pl/aktualnosci/208328,29,komunikat,wiemy__kto_zbuduje_tramwaj_do_gorki_narodowej_.html>; MI summary: <https://www.gov.pl/web/infrastruktura/krakowski-szybki-tramwaj-miedzy-krowodrza-gorka-a-gorka-narodowa>. |
 | `capitalCostPerKm.tramStreet` | **115 mln / km** | 2019 contract | Poznań Wilczak–Naramowice: ~380 mln for 3.3 km tramway **plus** ~7.5 km roads/junctions → ~115 mln per tram-km (road-heavy street corridor). PIM: <https://www.pim.poznan.pl/aktualnosci/informacje-archiwalne/podpisano-umowe-na-budowe-trasy-tramwajowej-na-naramowice>. Higher than Kraków segregated because of the road package; use as street-rebuild corridor, not paint-only. |
 | `capitalCostPerKm.brtDedicated` | **16 mln / km** | 2023–2025 planning/contracts | Wrocław Jagodno corridor: 42.68 mln for ~2.7 km bus (tram-ready) corridor ≈ 15.8 mln/km. <https://24wroclaw.pl/artykul/buspas-na-jagodno-miasto-n1425882>. Cross-check Gdańsk Spacerowa estimate ~97–100 mln / 5.7 km ≈ 17 mln/km. |
