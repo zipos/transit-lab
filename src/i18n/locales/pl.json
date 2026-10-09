@@ -21,7 +21,7 @@
   "app": {
     "name": "Laboratorium transportu",
     "description": "Piaskownica komunikacji miejskiej. Zmieniaj prawdziwe linie i rysuj nowe trasy.",
-    "alpha": "Wersja próbna"
+    "badge": "Beta"
   },
   "top": {
     "guide": "Poradnik",
@@ -279,7 +279,7 @@
   },
   "intro": {
     "kicker": "Krok {{step}} z 5",
-    "skip": "Pomiń",
+    "skip": "Pomiń wprowadzenie",
     "close": "Zamknij wprowadzenie",
     "skipStep": "Pomiń ten krok",
     "showAgain": "Pokaż wprowadzenie ponownie",

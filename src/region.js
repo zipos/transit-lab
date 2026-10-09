@@ -59,7 +59,7 @@ function applyChrome(region) {
   document.title = `${label(region.shortName)} / ${t('app.name')}`;
     document.documentElement.lang = language();
     $('map').setAttribute('aria-label', t('map.of', { name: label(region.name) }));
-    document.querySelector('.brand').innerHTML = `${label(region.shortName)} <span style="color:#8291a1;font-weight:600">/</span> ${t('app.name')} <span class="chip" style="margin-left:9px">${t('app.alpha')}</span>`;
+    document.querySelector('.brand').innerHTML = `${label(region.shortName)} <span style="color:#8291a1;font-weight:600">/</span> ${t('app.name')} <span class="chip" style="margin-left:9px">${t('app.badge')}</span>`;
     document.querySelector('.top-caption').textContent = t('top.caption', { count: region.municipalities.length });
     $('fit-button').title = t('top.fit', { count: region.municipalities.length });
 }
@@ -70,7 +70,9 @@ export async function loadRegion() {
   try { remembered = localStorage.getItem('transit-lab:region'); } catch (_) {}
   const index = await loadJson('./regions/index.json');
   const live = index.filter(region => region.status === 'live');
-  const id = [requested, remembered].find(value => live.some(region => region.id === value));
+  const id = [requested, remembered].find(value => live.some(region => region.id === value))
+    /* A single live region is not a choice: open it directly so first visits boot into the app. */
+    ?? (live.length === 1 ? live[0].id : null);
   if (!id) { showPicker(index); return null; }
   rememberRegion(id);
   const region = await loadJson(`./regions/${id}/region.json`);

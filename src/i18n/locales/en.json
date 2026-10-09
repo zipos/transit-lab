@@ -2,7 +2,7 @@
   "app": {
     "name": "Transit Lab",
     "description": "A public transport sandbox. Edit real lines and draw new routes.",
-    "alpha": "Sandbox alpha"
+    "badge": "Beta"
   },
   "top": {
     "guide": "Guide",
@@ -260,7 +260,7 @@
   },
   "intro": {
     "kicker": "Step {{step}} of 5",
-    "skip": "Skip",
+    "skip": "Skip the tour",
     "close": "Close intro",
     "skipStep": "Skip this step",
     "showAgain": "Show the intro again",

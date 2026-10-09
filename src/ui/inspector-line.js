@@ -114,7 +114,8 @@ export function renderLineInspector(ctx) {
   $('route-active').onchange = event => setRouteField(route, 'active', event.target.checked);
   const reverseRing = $('reverse-ring-button');
   if (reverseRing) reverseRing.onclick = () => setRouteStops(route, [route.stopIds[0], ...route.stopIds.slice(1).reverse()]);
-  $('add-stop-button').onclick = () => { state.tool = 'add-stop'; ctx.setMobileView('map'); map.getCanvas().style.cursor = 'crosshair'; toast(t('toast.insert')); };
+  const addStop = $('add-stop-button');
+  if (addStop) addStop.onclick = () => { state.tool = 'add-stop'; ctx.setMobileView('map'); map.getCanvas().style.cursor = 'crosshair'; toast(t('toast.insert')); };
   const editAlignment = $('edit-alignment-button');
   if (editAlignment) editAlignment.onclick = () => ctx.editPlayerAlignment(route);
   const mirrorButton = $('mirror-line-button');

@@ -2618,6 +2618,11 @@ body[data-network-open='false'] .bottom-bar { left: 56px; }
 .daypart-caption { max-width: 11rem; color: var(--ink-soft, #5d7082); font-size: 10px; line-height: 1.25; }
 .intro-target { outline: 3px solid #0c98ac; outline-offset: 3px; }
 .intro-coach { position: fixed; z-index: 45; width: min(280px, calc(100vw - 24px)); padding: 14px; border: 1px solid var(--line, #d5e0e4); border-radius: 14px; background: var(--surface-solid, #fff); box-shadow: var(--shadow-float, 0 12px 40px rgba(0,0,0,.16)); }
+.intro-coach.floating { top: auto !important; bottom: 76px; left: 50% !important; transform: translateX(-50%); }
+.intro-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.intro-head p { margin: 0; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+#intro-x { min-width: 32px; min-height: 32px; padding: 0; border: 0; border-radius: 9px; background: transparent; color: var(--ink-soft, #5d7082); font-size: 17px; line-height: 1; cursor: pointer; }
+#intro-x:hover { background: rgba(38,61,80,.08); }
 .intro-coach h2 { margin: 2px 0 6px; font-size: 16px; }
 .intro-coach p { margin: 0; color: var(--ink-soft, #5d7082); font-size: 13px; line-height: 1.4; }
 .intro-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }

@@ -24,7 +24,7 @@ test('smoke test: load, select tram T6, enter metro tool, place 2 stations', asy
   // Wait for loading overlay to be removed
   await page.locator('#loading').waitFor({ state: 'detached', timeout: 45000 });
 
-  const introSkip = page.locator('#intro-skip');
+  const introSkip = page.locator('#intro-end');
   if (await introSkip.count()) await introSkip.click();
   await page.locator('#layers-menu').evaluate(menu => { menu.open = false; });
 
@@ -59,5 +59,6 @@ test('smoke test: load, select tram T6, enter metro tool, place 2 stations', asy
   await expect(page.locator('#inspector-content .section-title .value')).toHaveText('2');
 
   // 7. Fail on console errors
+  if (consoleErrors.length) console.log('Console errors:\n' + consoleErrors.join('\n'));
   expect(consoleErrors).toEqual([]);
 });

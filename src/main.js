@@ -455,7 +455,7 @@ async function startApp() {
   map.on('style.load', restoreGameLayers);
   map.on('styledata', restoreGameLayers);
   map.on('load', () => {
-    $('loading').remove();
+    $('loading')?.remove();
     map.on('click', onMapClick);
     $('map').addEventListener('contextmenu', event => event.preventDefault());
     $('map').addEventListener('mousedown', onMiddleDraftMouseDown, true);
@@ -1398,7 +1398,7 @@ async function startApp() {
   function changed() { rebuildRouteCache(); persist(); renderList(); renderInspector(); renderNetwork(); renderSelection(); scheduleStats(); introSync(); }
   function clearSelection() {
     state.selected = null; state.selectedStop = null;
-    setPanelTab('network'); renderList(); renderInspector(); renderSelection();
+    setPanelTab('network'); renderList(); renderInspector(); renderSelection(); introSync();
   }
   function inspectStop(id) {
     if (!stop(id)) return;
@@ -2248,7 +2248,7 @@ async function startApp() {
     introSync();
   };
   $('heatmap-toggle').onclick = () => { state.populationVisible = !state.populationVisible; renderPopulationControl(); };
-  document.querySelector('.mobile-tabs').onclick = e => { const button = e.target.closest('[data-view]'); if (button) setMobileView(button.dataset.view); };
+  document.querySelector('.mobile-tabs').onclick = e => { const button = e.target.closest('[data-view]'); if (button) setMobileView(button.dataset.view); introSync(); };
   $('inspector-content').onclick = e => {
     const target = e.target.closest('button'); if (!target) return;
     if (target.hasAttribute('data-clear-selection')) { clearSelection(); return; }
@@ -2595,26 +2595,65 @@ async function startApp() {
   function writeIntroSettings(patch) {
     try { localStorage.setItem('transit-lab:settings', JSON.stringify({ ...introSettings(), ...patch })); } catch (_) {}
   }
-  function introTarget() {
-    if (intro.index === 0) return document.querySelector('[data-map-mode="bus"]');
-    if (intro.index === 1) {
-      const route = allRoutes().find(item => item.name === 'T6');
-      return route ? document.querySelector(`[data-route="${CSS.escape(route.id)}"]`) : null;
+  const introNarrow = () => window.matchMedia('(max-width: 600px)').matches;
+  const introShowView = view => { if (introNarrow()) setMobileView(view); };
+  const introT6Line = () => lines().find(line => line.name === 'T6') || null;
+  /* The list renders one card per line, keyed by a direction-0 pattern id. Match any rendered T6 pattern. */
+  function introT6Card() {
+    const line = introT6Line();
+    if (!line) return null;
+    for (const pattern of line.patterns) {
+      const card = document.querySelector(`[data-route="${CSS.escape(pattern.id)}"]`);
+      if (card) return card;
     }
-    if (intro.index === 2) return $('route-headway');
-    if (intro.index === 3) return $('metro-tool');
-    return document.querySelector('[data-panel-tab="results"]');
+    return null;
   }
-  function introDoneAction() {
-    if (intro.index === 0) return state.mapModes.bus === false;
-    if (intro.index === 1) return routeById(state.selected)?.name === 'T6';
-    if (intro.index === 2) { const route = routeById(state.selected); return route?.name === 'T6' && Number(route.headway) === 6; }
-    if (intro.index === 3) return state.customRoutes.some(route => route.source === 'player');
-    return state.panelTab === 'results';
+  function introRevealT6() {
+    if (introT6Card()) return;
+    state.search = ''; state.filter = 'all'; state.showAll = true;
+    renderList();
+  }
+  const INTRO_STEPS = [
+    {
+      target: () => document.querySelector('[data-map-mode="bus"]'),
+      done: () => state.mapModes.bus === false,
+      ensure: () => { $('layers-menu').open = true; },
+    },
+    {
+      target: introT6Card,
+      done: () => lineFor(state.selected)?.name === 'T6',
+      ensure: () => { setPanelTab('network'); introShowView('network'); introRevealT6(); },
+    },
+    {
+      target: () => $('route-headway'),
+      done: () => lineFor(state.selected)?.name === 'T6' && Number(routeById(state.selected)?.headway) === 6,
+      retreat: () => lineFor(state.selected)?.name !== 'T6',
+      ensure: () => { setPanel('inspector', true); introShowView('line'); },
+    },
+    {
+      target: () => $('metro-tool'),
+      done: () => state.customRoutes.some(route => route.source === 'player'),
+      ensure: () => { setPanelTab('network'); introShowView('network'); },
+      skippable: true,
+    },
+    {
+      target: () => document.querySelector(introNarrow() ? '[data-view="results"]' : '[data-panel-tab="results"]'),
+      done: () => state.panelTab === 'results',
+      ensure: () => { introShowView('results'); },
+    },
+  ];
+  function introAdvance() {
+    if (!intro.active) return false;
+    if (INTRO_STEPS[intro.index]?.retreat?.()) intro.index = Math.max(0, intro.index - 1);
+    while (intro.index < INTRO_STEPS.length && INTRO_STEPS[intro.index].done()) intro.index += 1;
+    if (intro.index >= INTRO_STEPS.length) { finishIntro(); return false; }
+    return true;
   }
   function placeIntro(target) {
     const coach = $('intro-coach');
-    if (!coach || !target) return;
+    if (!coach) return;
+    coach.classList.toggle('floating', !target);
+    if (!target) return;
     target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     const rect = target.getBoundingClientRect();
     const width = coach.offsetWidth, height = coach.offsetHeight;
@@ -2627,6 +2666,16 @@ async function startApp() {
     if (overlaps) coach.style.top = `${Math.max(8, rect.top - height - 10)}px`;
   }
   function showIntro() {
+    const step = INTRO_STEPS[intro.index];
+    if (!step) { finishIntro(); return; }
+    if (!introT6Line() && intro.index <= 2) {
+      intro.index = 3;
+      toast(t('intro.missing'));
+      if (!introAdvance()) return;
+      showIntro();
+      return;
+    }
+    step.ensure();
     let coach = $('intro-coach');
     if (!coach) {
       coach = document.createElement('div');
@@ -2634,29 +2683,28 @@ async function startApp() {
       coach.className = 'intro-coach';
       coach.setAttribute('role', 'dialog');
       coach.setAttribute('aria-labelledby', 'intro-title');
-      coach.innerHTML = `<p id="intro-kicker"></p><h2 id="intro-title"></h2><p id="intro-body"></p><div class="intro-actions"><button type="button" id="intro-skip-step"></button><button type="button" id="intro-skip"></button><button type="button" id="intro-close"></button></div>`;
+      coach.innerHTML = `<div class="intro-head"><p id="intro-kicker"></p><button type="button" id="intro-x" aria-label="">×</button></div><h2 id="intro-title"></h2><p id="intro-body"></p><div class="intro-actions"><button type="button" id="intro-skip-step"></button><button type="button" id="intro-end"></button></div>`;
       document.body.appendChild(coach);
-      $('intro-skip').onclick = finishIntro;
-      $('intro-close').onclick = finishIntro;
-      $('intro-skip-step').onclick = () => { intro.index = 4; showIntro(); };
+      $('intro-x').onclick = finishIntro;
+      $('intro-end').onclick = finishIntro;
+      $('intro-skip-step').onclick = () => { intro.index += 1; if (introAdvance()) showIntro(); };
     }
     $('intro-kicker').textContent = t('intro.kicker', { step: intro.index + 1 });
     $('intro-title').textContent = t(`intro.steps.${intro.index}.title`);
     $('intro-body').textContent = t(`intro.steps.${intro.index}.body`);
-    $('intro-skip').textContent = t('intro.skip');
-    $('intro-close').textContent = t('intro.close');
+    $('intro-x').setAttribute('aria-label', t('intro.close'));
+    $('intro-x').title = t('intro.close');
     $('intro-skip-step').textContent = t('intro.skipStep');
-    $('intro-skip-step').hidden = intro.index !== 3;
+    $('intro-skip-step').hidden = !step.skippable;
+    $('intro-end').textContent = t('intro.skip');
     document.body.dataset.introStep = String(intro.index);
-    if (intro.index === 0) $('layers-menu').open = true;
-    if (intro.index === 1 && state.panelTab !== 'network') setPanelTab('network');
-    if (intro.index === 2) setPanel('inspector', true);
     document.querySelectorAll('.intro-target').forEach(element => element.classList.remove('intro-target'));
-    const target = introTarget();
-    if (!target && intro.index === 1) { finishIntro(); toast(t('intro.missing')); return; }
+    const target = step.target();
     if (target) {
       target.classList.add('intro-target');
       placeIntro(target);
+    } else {
+      placeIntro(null);
     }
   }
   function finishIntro() {
@@ -2667,9 +2715,7 @@ async function startApp() {
     document.querySelectorAll('.intro-target').forEach(element => element.classList.remove('intro-target'));
   }
   function introSync() {
-    if (!intro.active) return;
-    while (intro.index <= 4 && introDoneAction()) intro.index += 1;
-    if (intro.index > 4) { finishIntro(); return; }
+    if (!introAdvance()) return;
     showIntro();
   }
   function maybeStartIntro() {
@@ -2678,9 +2724,18 @@ async function startApp() {
     intro.started = true;
     intro.active = true;
     intro.index = 0;
+    if (!introAdvance()) return;
     showIntro();
   }
-  window.addEventListener('resize', () => { if (intro.active) placeIntro(introTarget()); });
+  window.addEventListener('resize', () => {
+    if (!intro.active) return;
+    const step = INTRO_STEPS[intro.index];
+    if (!step) return;
+    const target = step.target();
+    document.querySelectorAll('.intro-target').forEach(element => element.classList.remove('intro-target'));
+    if (target) { target.classList.add('intro-target'); placeIntro(target); }
+    else placeIntro(null);
+  });
   onLocale(() => {
     applyDom();
     paintRegion(region);
