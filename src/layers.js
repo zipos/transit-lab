@@ -150,25 +150,48 @@ export function modeColorExpression() {
   ];
 }
 
-function flowWidthCore() {
-  return [
-    'interpolate', ['linear'], ['zoom'],
-    9, ['interpolate', ['linear'], ['get', 'sqrtFlow'], 0, 0.6, 20, 1.4, 60, 2.4, 120, 3.6],
-    12, ['interpolate', ['linear'], ['get', 'sqrtFlow'], 0, 1.2, 20, 3, 60, 5.5, 120, 8],
-    15, ['interpolate', ['linear'], ['get', 'sqrtFlow'], 0, 2, 20, 5, 60, 9, 120, 14],
-  ];
+/* MapLibre accepts one zoom interpolate per expression, and only at the top, so every mode or state branch lives
+   inside each zoom stop. A bare ['zoom'] inside 'case' makes the style invalid and the layer is silently dropped. */
+const isBus = ['==', ['get', 'mode'], 'bus'];
+const isInactive = ['==', ['get', 'active'], false];
+function byZoom(zooms, at) {
+  return ['interpolate', ['linear'], ['zoom'], ...zooms.flatMap((z, i) => [z, at(z, i)])];
 }
 
-/** Bus bands hidden below z11 (too dense at region scale); fixed-rail modes get a width boost. */
+export function routeWidthExpression() {
+  return byZoom([9, 11, 13, 17], (z, i) => ['case', isBus, [1.0, 1.15, 2.0, 4.0][i], [1.8, 1.8, 2.5, 4.5][i]]);
+}
+
+export function routeOpacityExpression() {
+  return byZoom([9, 11, 13, 17], (z, i) => ['case', isInactive, 0.08, isBus, [0.25, 0.25, 0.45, 0.7][i], [0.85, 0.85, 0.88, 0.92][i]]);
+}
+
+export function routeHaloOpacityExpression() {
+  return byZoom([9, 11, 14, 17], (z, i) => ['case', isInactive, 0, isBus, [0.08, 0.15, 0.5, 0.65][i], [0.35, 0.45, 0.65, 0.75][i]]);
+}
+
+const FLOW_SQRT_STOPS = [0, 20, 60, 120];
+const FLOW_WIDTH_TABLE = { 9: [0.6, 1.4, 2.4, 3.6], 12: [1.2, 3, 5.5, 8], 15: [2, 5, 9, 14] };
+
+/** Band width for a given sqrt(daily riders), interpolated between the table's zoom rows. */
+function flowWidthAt(zoom) {
+  const rows = Object.keys(FLOW_WIDTH_TABLE).map(Number);
+  const lo = Math.max(...rows.filter(row => row <= zoom));
+  const hi = Math.min(...rows.filter(row => row >= zoom));
+  const t = hi === lo ? 0 : (zoom - lo) / (hi - lo);
+  const widths = FLOW_WIDTH_TABLE[lo].map((w, i) => +(w + (FLOW_WIDTH_TABLE[hi][i] - w) * t).toFixed(3));
+  return ['interpolate', ['linear'], ['get', 'sqrtFlow'], ...FLOW_SQRT_STOPS.flatMap((stop, i) => [stop, widths[i]])];
+}
+
+/** Bus bands fade in between z10 and z11 (too dense at region scale); fixed-rail modes get a width boost. */
 export function flowWidthExpression() {
-  const core = flowWidthCore();
-  return [
-    'case',
-    ['all', ['==', ['get', 'mode'], 'bus'], ['<', ['zoom'], 11]], 0,
-    ['match', ['get', 'mode'], 'metro', ['*', core, 1.22], 'rail', ['*', core, 1.14], 'tram', ['*', core, 1.08], core],
-  ];
+  return byZoom([9, 10, 11, 12, 15], zoom => {
+    const core = flowWidthAt(zoom);
+    const byMode = ['match', ['get', 'mode'], 'metro', ['*', core, 1.22], 'rail', ['*', core, 1.14], 'tram', ['*', core, 1.08], core];
+    return zoom < 11 ? ['case', isBus, 0, byMode] : byMode;
+  });
 }
 
 export function flowBandOpacityExpression(active = 0.88) {
-  return ['case', ['all', ['==', ['get', 'mode'], 'bus'], ['<', ['zoom'], 11]], 0, active];
+  return byZoom([10, 11], zoom => (zoom < 11 ? ['case', isBus, 0, active] : active));
 }

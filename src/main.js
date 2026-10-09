@@ -21,7 +21,8 @@ import {
 import {
   flowBandCollection, flowStopCollection, paintFlowCells, paintTravelCells,
   vcColorExpression, modeColorExpression, flowWidthExpression, flowBandOpacityExpression,
-} from './layers.js?v=2026-10-09-layers';
+  routeWidthExpression, routeOpacityExpression, routeHaloOpacityExpression,
+} from './layers.js?v=2026-10-09-routes';
 
 window.TransitScenario = { normalize, safeUrl: scenarioSafeUrl, safeColor };
 applyDom();
@@ -74,7 +75,7 @@ async function startApp() {
     const value = t(key);
     return value === key ? String(mode || 'line') : value;
   }
-  const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
+  const compactMillions = n => n >= 1_000_000 ? `${fmtDecimal(n / 1_000_000, 2)}${t('unit.million')}` : format(n);
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
   const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftWaypoints: [], draftRing: false, draftMove: false, movingDraftIndex: null, editingRouteId: null, draftName: 'M1', draftMode: 'metro', draftVehicle: 'metro6', draftAlignment: 'tunnel', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 6, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, budgetMode: false, budgetSummary: null, history: [], sharePreview: null, compareSlotId: null, compareName: '', challenge: null, challengeOdMinutes: null, mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', flowsVisible: false, flowsCrowding: false, layerCompare: false, travelOrigin: null, travel: null, mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
   let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, insightHoverBound = false, insightPopup = null, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0, flowsStatsKey = null, insightGridKey = null, insightGridFrame = 0, travelRevision = 0;
@@ -624,8 +625,8 @@ async function startApp() {
     map.addSource('ruler-line', { type: 'geojson', data: featureCollection([]) });
     map.addSource('ruler-points', { type: 'geojson', data: featureCollection([]) });
     map.addSource('vehicles', { type: 'geojson', data: featureCollection([]) });
-    map.addLayer({ id: 'route-halo', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 5, 17, 9], 'line-opacity': ['case', ['==', ['get', 'active'], false], 0, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.08, 11, 0.15, 14, 0.5, 17, 0.65], ['interpolate', ['linear'], ['zoom'], 9, 0.35, 11, 0.45, 14, 0.65, 17, 0.75]] } }, before);
-    map.addLayer({ id: 'routes', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 1.0, 11, 1.15, 13, 2.0, 17, 4.0], ['interpolate', ['linear'], ['zoom'], 9, 1.8, 11, 1.8, 13, 2.5, 17, 4.5]], 'line-opacity': ['case', ['==', ['get', 'active'], false], 0.08, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.25, 11, 0.25, 13, 0.45, 17, 0.70], ['interpolate', ['linear'], ['zoom'], 9, 0.85, 11, 0.85, 13, 0.88, 17, 0.92]] } }, before);
+    map.addLayer({ id: 'route-halo', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 5, 17, 9], 'line-opacity': routeHaloOpacityExpression() } }, before);
+    map.addLayer({ id: 'routes', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': ['get', 'color'], 'line-width': routeWidthExpression(), 'line-opacity': routeOpacityExpression() } }, before);
     map.addLayer({ id: 'flow-band-halo', type: 'line', source: 'flow-bands', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'sort'] }, paint: { 'line-color': '#ffffff', 'line-width': flowWidthExpression(), 'line-opacity': flowBandOpacityExpression(0.55), 'line-gap-width': 0 } }, before);
     map.addLayer({ id: 'flow-bands', type: 'line', source: 'flow-bands', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'sort'] }, paint: { 'line-color': modeColorExpression(), 'line-width': flowWidthExpression(), 'line-opacity': flowBandOpacityExpression(0.88) } }, before);
     map.addLayer({ id: 'flow-stops', type: 'circle', source: 'flow-stops', layout: { visibility: 'none' }, paint: {
@@ -684,8 +685,6 @@ async function startApp() {
     if (state.playing || vehiclesActive) renderVehicles();
     applyFlowLayerVisibility();
   }
-  const routeOpacityPaint = ['case', ['==', ['get', 'active'], false], 0.08, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.25, 11, 0.25, 13, 0.45, 17, 0.70], ['interpolate', ['linear'], ['zoom'], 9, 0.85, 11, 0.85, 13, 0.88, 17, 0.92]];
-  const routeHaloOpacityPaint = ['case', ['==', ['get', 'active'], false], 0, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.08, 11, 0.15, 14, 0.5, 17, 0.65], ['interpolate', ['linear'], ['zoom'], 9, 0.35, 11, 0.45, 14, 0.65, 17, 0.75]];
   function applyFlowLayerVisibility() {
     const show = state.flowsVisible && !!state.stats?.flows;
     for (const id of ['flow-bands', 'flow-band-halo', 'flow-stops']) {
@@ -697,8 +696,8 @@ async function startApp() {
       map.setPaintProperty('flow-band-halo', 'line-opacity', flowBandOpacityExpression(0.55));
     }
     if (map?.getLayer('routes')) {
-      map.setPaintProperty('routes', 'line-opacity', show ? 0.18 : routeOpacityPaint);
-      map.setPaintProperty('route-halo', 'line-opacity', show ? 0.08 : routeHaloOpacityPaint);
+      map.setPaintProperty('routes', 'line-opacity', show ? 0.18 : routeOpacityExpression());
+      map.setPaintProperty('route-halo', 'line-opacity', show ? 0.08 : routeHaloOpacityExpression());
     }
   }
   function applyInsightPaint() {
@@ -1053,7 +1052,7 @@ async function startApp() {
     if (!station) return;
     state.draft.push(station);
     ensureWaypoints();
-    renderInspector(); renderDraft(); toast(t(state.draft.length === 1 ? 'toast.draftCount' : 'toast.draftCountPlural', { count: state.draft.length }));
+    renderInspector(); renderDraft(); toast(plural('toast.draftCount', state.draft.length));
   }
   function insertDraftStation(segmentIndex, pos) {
     const station = stationFrom(pos);

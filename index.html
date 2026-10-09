@@ -11,10 +11,10 @@
   <link rel="stylesheet" href="./styles.css?v=2026-10-09-shell">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <script defer src="./vendor/maplibre-gl.js"></script>
-  <script type="module" src="./src/main.js?v=2026-10-09-shell"></script>
+  <script type="module" src="./src/main.js?v=2026-10-09-routes"></script>
 </head>
 <body>
-  <main id="map" aria-label="Map"></main>
+  <main id="map" data-i18n-aria="map.label" aria-label="Map"></main>
   <div id="map-context-menu" class="map-context-menu" role="menu" data-i18n-aria="map.menu" aria-label="Map location actions" tabindex="-1" hidden></div>
 
   <div id="share-banner" class="share-banner" hidden></div>
@@ -24,7 +24,7 @@
       <span class="top-caption"></span>
       <div class="locale-switch" role="group" data-i18n-aria="locale.label" aria-label="Language"><button type="button" data-locale="pl" aria-pressed="false">PL</button><button type="button" data-locale="en" aria-pressed="false">EN</button></div>
       <button id="guide-button" data-i18n="top.guide" data-i18n-title="top.guideTitle" title="How to play">Guide</button>
-      <button id="fullscreen-button" type="button" title="Toggle fullscreen (F)" data-i18n-aria="top.enterFullscreen" aria-label="Enter fullscreen"><span class="ico" aria-hidden="true">⛶</span><span class="label" data-i18n="top.fullscreen">Fullscreen</span></button>
+      <button id="fullscreen-button" type="button" data-i18n-title="menu.fullscreen" title="Toggle fullscreen (F)" data-i18n-aria="top.enterFullscreen" aria-label="Enter fullscreen"><span class="ico" aria-hidden="true">⛶</span><span class="label" data-i18n="top.fullscreen">Fullscreen</span></button>
       <button id="settings-button" type="button" data-i18n-title="top.settingsTitle" title="Display settings"><span class="ico" aria-hidden="true">⚙</span><span class="label" data-i18n="top.settings">Settings</span></button>
       <button id="share-button" data-i18n="top.share" data-i18n-title="top.shareTitle" title="Copy a share link">Share</button>
       <button id="slots-button" data-i18n="top.slots" data-i18n-title="top.slotsTitle" title="Saved plans">Plans</button>
@@ -42,7 +42,7 @@
 
   <aside class="sidebar" data-i18n-aria="nav.sidebar" aria-label="Network, inspector and results">
     <div class="panel-peek" aria-hidden="true"><span data-i18n="network.peek">NETWORK</span><strong id="network-peek-total">—</strong><small data-i18n="network.patterns">patterns</small></div>
-    <div class="pulse-strip"><span><b id="pulse-passengers">—</b> <span data-i18n="network.trips">trips</span></span><span><b id="pulse-share">—</b> <span data-i18n="network.share">share</span></span><span id="pulse-budget-wrap" hidden><b id="pulse-budget">—</b> <span data-i18n="network.budgetPulse">capital</span></span></div>
+    <div class="pulse-strip"><span><span data-i18n="network.trips">trips</span> <b id="pulse-passengers">—</b></span><span><span data-i18n="network.share">share</span> <b id="pulse-share">—</b></span><span id="pulse-budget-wrap" hidden><span data-i18n="network.budgetPulse">capital</span> <b id="pulse-budget">—</b></span></div>
     <progress class="sim-progress" max="1" value="0" hidden data-i18n-aria="results.progress" aria-label="Recalculating"></progress>
     <nav class="panel-tabs" data-i18n-aria="nav.sections" aria-label="Panel sections"><button type="button" data-panel-tab="network" class="active" aria-pressed="true" data-i18n="nav.network">Network</button><button type="button" data-panel-tab="inspect" aria-pressed="false" data-i18n="nav.inspect">Inspect</button><button type="button" data-panel-tab="results" aria-pressed="false" data-i18n="nav.results">Results</button></nav>
     <div class="section" data-panel-section="network">
@@ -99,10 +99,10 @@
       <div id="budget-results" class="budget-results"></div>
       <p class="fine-print"><span data-i18n="results.fine">Passenger demand and satisfaction are simulated, not measured.</span> <button class="inline-link" id="model-link" data-i18n="results.how">How?</button></p>
     </div>
-    <div class="inspector" id="inspector" data-panel-section="inspect" aria-label="Selected line or metro builder"><span id="inspector-peek-label" hidden></span><span id="inspector-peek-kind" hidden></span><div id="inspector-content"></div></div>
+    <div class="inspector" id="inspector" data-panel-section="inspect" data-i18n-aria="nav.inspector" aria-label="Selected line or metro builder"><span id="inspector-peek-label" hidden></span><span id="inspector-peek-kind" hidden></span><div id="inspector-content"></div></div>
   </aside>
 
-  <div class="bottom-bar" aria-label="Simulation and map controls">
+  <div class="bottom-bar" data-i18n-aria="bottom.controls" aria-label="Simulation and map controls">
     <div class="bottom-group"><button id="play-button" class="play" aria-pressed="false" data-i18n-title="bottom.playTitle" title="Play or pause illustrative vehicle motion">▶ <span data-i18n="bottom.play">Play</span></button><span id="sim-clock" class="sim-clock" data-i18n-title="bottom.clockTitle" title="Click to reset simulation time and clear vehicles">07:00</span><div class="daypart-switch" role="group" data-i18n-aria="bottom.period" aria-label="Service period" aria-describedby="daypart-caption"><button type="button" data-daypart="peak" aria-pressed="true" data-i18n="bottom.peak">Peak</button><button type="button" data-daypart="midday" aria-pressed="false" data-i18n="bottom.midday">Midday</button><button type="button" data-daypart="saturday" aria-pressed="false" data-i18n="bottom.saturday">Saturday</button></div><span id="daypart-caption" class="daypart-caption" data-i18n="bottom.caption">Figures follow this period, not the minute.</span><button id="speed-button" data-i18n-title="bottom.speed" title="Change simulation speed">1×</button></div>
     <details class="layers-menu" id="layers-menu"><summary data-i18n="bottom.layers">Layers</summary><div class="layers-popover">
     <div class="heatmap-control" data-i18n-aria="bottom.planning" aria-label="Planning layers">
@@ -119,7 +119,7 @@
     <button type="button" data-map-mode="rail" aria-pressed="true" data-i18n-aria="bottom.hideRail" aria-label="Hide rail routes on map" data-i18n-title="bottom.hideRailTitle" title="Hide rail routes"><i class="legend-rail" aria-hidden="true"></i><span data-i18n="mode.rail">Rail</span></button>
     <button type="button" data-map-mode="metro" aria-pressed="true" data-i18n-aria="bottom.hideMetro" aria-label="Hide metro routes on map" data-i18n-title="bottom.hideMetroTitle" title="Hide metro routes"><i class="legend-metro" aria-hidden="true"></i><span data-i18n="mode.metro">Metro</span></button>
     </div></div></details>
-    <div class="bottom-group map-orientation"><button id="zoom-out-button" data-i18n-title="bottom.zoomOut" data-i18n-aria="bottom.zoomOut" title="Zoom out" aria-label="Zoom out">−</button><button id="zoom-in-button" data-i18n-title="bottom.zoomIn" data-i18n-aria="bottom.zoomIn" title="Zoom in" aria-label="Zoom in">+</button><button id="compass-button" data-i18n-title="bottom.north" data-i18n-aria="bottom.northAria" title="Reset north" aria-label="Reset map orientation">◆</button><button id="tilt-button" data-i18n-title="bottom.tilt" data-i18n-aria="bottom.tilt" title="Toggle map tilt" aria-label="Toggle map tilt">◩</button><button id="fit-button" title="Fit the region">◎ <span data-i18n="bottom.fit">Fit</span></button></div>
+    <div class="bottom-group map-orientation"><button id="zoom-out-button" data-i18n-title="bottom.zoomOut" data-i18n-aria="bottom.zoomOut" title="Zoom out" aria-label="Zoom out">−</button><button id="zoom-in-button" data-i18n-title="bottom.zoomIn" data-i18n-aria="bottom.zoomIn" title="Zoom in" aria-label="Zoom in">+</button><button id="compass-button" data-i18n-title="bottom.north" data-i18n-aria="bottom.northAria" title="Reset north" aria-label="Reset map orientation">◆</button><button id="tilt-button" data-i18n-title="bottom.tilt" data-i18n-aria="bottom.tilt" title="Toggle map tilt" aria-label="Toggle map tilt">◩</button><button id="fit-button" data-i18n-title="bottom.fitTitle" title="Fit the region">◎ <span data-i18n="bottom.fit">Fit</span></button></div>
   </div>
 
   <div id="loading" role="status"><span class="loader-dot"></span><strong data-i18n="loading.title">Opening the network</strong><small data-i18n="loading.detail">Loading map and service snapshot…</small></div>

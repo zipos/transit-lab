@@ -1,5 +1,7 @@
 # Polish copy for the owner to review
 
+Last pass: 2026-10-09. Lines below show the current wording; items marked as changed in that pass were rewritten for grammar (number agreement is avoided by putting the label before the number).
+
 The interface is bilingual. Polish is the default when the browser language starts with `pl`. Uncertain Polish is listed here so it can be corrected without hunting through the catalogs.
 
 Stop names, line long names, municipality names and published source titles stay as printed in the source. Region names come from `regions/gzm/region.json`.
@@ -41,11 +43,11 @@ Each schematic station note is a Polish rendering of the English "approximate pr
 
 ## Line list (brief 13)
 
-- co ~{{minutes}} min
+- co ok. {{minutes}} min
 - Tylko ten kierunek
 - Ta częstotliwość zapisuje się na każdym wariancie linii.
 - Ta częstotliwość zapisuje się tylko na wariancie otwartym w tym kierunku.
-- Odbij na drugi kierunek
+- Odbij w drugą stronę
 
 ## Share links and plans (brief 34)
 
@@ -53,15 +55,15 @@ Each schematic station note is a Polish rendering of the English "approximate pr
 - Zachowaj kopię
 - Porównaj z
 - Opublikowana sieć
-- W tej przeglądarce brakuje miejsca na kolejny plan.
+- W tej przeglądarce nie ma już miejsca na kolejny plan.
 
 ## Demand zones (brief 21)
 
-- dojście z komórki, 4,5 km/h i współczynnik 1,25
+- Rozkład GTFS 2026 · dojście pieszo 4,5 km/h, trasa o 25% dłuższa niż w linii prostej
 - 20 min+
 - {{minutes}} min pieszo do {{name}}
 - Strefa popytu
-- {{count}} mieszkańców w tej strefie
+- Mieszkańcy strefy: {{count}}
 
 ## Mode choice (brief 23)
 
@@ -71,10 +73,10 @@ Draft Polish. The share is explicitly not calibrated.
 - Udział transportu
 - Od drzwi do drzwi
 - Bez kalibracji
-- wsiadania
-- pieszo, poniżej 1,2 km
-- {{share}}% w 800 m od tramwaju lub kolei
-- udział wewnątrz tej gminy
+- wsiadania:
+- pieszo, poniżej 1,2 km:
+- mieszkańców w 800 m od tramwaju lub kolei: (udział w procentach w nawiasie)
+- udział wewnątrz tej gminy:
 
 ## Line builder (brief 30)
 
@@ -84,10 +86,10 @@ Draft Polish.
 - Edytuj przebieg
 - Zapisz przebieg
 - Wspólny opublikowany przystanek
-- mieszkańców w zasięgu
-- nowo w 800 m od szybkiego transportu
+- mieszkańcy w zasięgu:
+- nowo w 800 m od szybkiego transportu:
 - Wydzielony pas / Tunel / Estakada
-- Zamieniono {{count}} skopiowanych przystanków…
+- Skopiowane przystanki ({{count}}) przyciągnięto do najbliższych opublikowanych peronów.
 
 ## Flows and crowding (brief 24)
 
@@ -104,8 +106,8 @@ Draft Polish.
 - Obciążenie w szczycie {{load}}%
 - Najbardziej obciążony odcinek: {{from}} → {{to}}
 - Przepływy są jeszcze liczone.
-- wsiadań na dobę
-- przesiadek na dobę
+- wsiadania na dobę:
+- przesiadki na dobę:
 
 ## Simulation progress (brief 20)
 
@@ -115,18 +117,18 @@ Draft Polish.
 
 Draft Polish.
 
-- kapitał
+- koszt budowy
 - Tryb budżetu
 - Budżet
-- kapitał na nową infrastrukturę
+- koszt budowy nowej infrastruktury
 - roczna zmiana kosztów eksploatacji
 - roczne wpływy z biletów
-- Wpływy z biletów czekają na kalibrację (brief 23b).
+- Wpływy z biletów czekają na kalibrację.
 - pokrycie wpływami z biletów
-- zł kapitału na nowego pasażera dziennie
-- Kapitał {{spent}} zł z budżetu {{budget}} zł
+- zł budowy na nowego pasażera dziennie
+- Koszt budowy {{spent}} zł z budżetu {{budget}} zł
 - eksploatacja / dobę
-- {{count}} pojazdów
-- +{{count}} pojazdów wobec opublikowanej
+- pojazdy: {{count}}
+- pojazdy: +{{count}} wobec opublikowanej
 - Koszty planistyczne
-- Opcjonalny tryb budżetu używa planistycznych kosztów jednostkowych ze źródeł w notatce parametrów modelu. Kwoty zostają w roku kontraktu lub sprawozdania i nie są budżetem projektu ani wyceną przetargową.
+- Opcjonalny tryb budżetu używa planistycznych kosztów jednostkowych ze źródeł w notatce parametrów modelu. Kwoty dotyczą roku umowy lub sprawozdania i nie są budżetem projektu ani wyceną przetargową.

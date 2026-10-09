@@ -79,7 +79,7 @@
       "id": "gzm-tram-frequency",
       "title": { "pl": "Częstszy tramwaj", "en": "More trams, carefully" },
       "brief": {
-        "pl": "Podwój częstotliwość tramwajów bez nowej infrastruktury. Tylko edycja opublikowanych linii. Budżet operacyjny liczy flotę.",
+        "pl": "Podwój częstotliwość tramwajów bez nowej infrastruktury. Tylko edycja opublikowanych linii. Budżet operacyjny uwzględnia flotę.",
         "en": "Double tram frequency without new track. Published lines only. The budget tracks the fleet."
       },
       "constraints": {
@@ -91,7 +91,7 @@
       },
       "objectives": [
         { "type": "tripsDelta", "min": 15000, "label": { "pl": "+15 000 podróży", "en": "+15,000 trips" } },
-        { "type": "maxLoad", "maxVc": 1.0, "label": { "pl": "Żaden odcinek > 100% w szczycie", "en": "No segment over 100% at peak" } }
+        { "type": "maxLoad", "maxVc": 1.0, "label": { "pl": "Żaden odcinek nie przekracza 100% w szczycie", "en": "No segment over 100% at peak" } }
       ],
       "stars": [1, 2]
     },
@@ -110,7 +110,7 @@
       },
       "objectives": [
         { "type": "coverage", "minDelta": 50000, "label": { "pl": "+50 000 w zasięgu szybkiego transportu", "en": "+50,000 in rapid catchment" } },
-        { "type": "costPerRider", "max": 80000, "label": { "pl": "Koszt / nowego pasażera ≤ 80 tys. zł", "en": "Cost / new daily rider ≤ 80k zł" } }
+        { "type": "costPerRider", "max": 80000, "label": { "pl": "Koszt na nowego pasażera ≤ 80 tys. zł", "en": "Cost / new daily rider ≤ 80k zł" } }
       ],
       "stars": [1, 2]
     }

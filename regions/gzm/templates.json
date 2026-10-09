@@ -45,11 +45,11 @@
       "sourceUrl": "https://bip.metropoliagzm.pl/attachments/download/189291",
       "confidence": {
         "en": "High for the named anchor sequence; schematic for station placement and alignment",
-        "pl": "Wysoka pewność dla nazwanej sekwencji punktów; schematyczna dla położenia stacji i przebiegu"
+        "pl": "Wysoka pewność co do nazwanych punktów; położenie stacji i przebieg są schematyczne."
       },
       "description": {
         "en": "The 2018 GZM concept lists a rapid-tram connection from Sosnowiec Osiedle Zagórze via Sosnowiec Centrum, Będzin Koszelew and a Siemianowice Śląskie monorail interchange to Katowice Metropolia. The concept gives candidate anchor names, not surveyed stop sites or street-level geometry. The rapid-tram network is a recommendation, not an approved build project.",
-        "pl": "Koncepcja GZM z 2018 r. wymienia połączenie szybkiego tramwaju z Sosnowca Osiedla Zagórze przez Sosnowiec Centrum, Będzin Koszelew i przesiadkę na kolej jednoszynową w Siemianowicach Śląskich do Katowic Metropolii. Dokument podaje nazwy punktów kotwiczących, a nie pomierzone miejsca przystanków ani geometrię uliczną. Sieć szybkiego tramwaju jest rekomendacją, nie zatwierdzoną budową."
+        "pl": "Koncepcja GZM z 2018 r. wymienia połączenie szybkiego tramwaju z osiedla Zagórze w Sosnowcu przez Sosnowiec Centrum, Będzin Koszelew i przesiadkę na kolej jednoszynową w Siemianowicach Śląskich do Katowic Metropolii. Dokument podaje nazwy punktów orientacyjnych, a nie zmierzone miejsca przystanków ani geometrię uliczną. Sieć szybkiego tramwaju jest rekomendacją, nie zatwierdzoną budową."
       },
       "stationCoordinateSourceUrl": "https://otwartedane.metropoliagzm.pl/dataset/rozklady-jazdy-i-lokalizacja-przystankow-gtfs-wersja-rozszerzona",
       "stations": [
@@ -121,11 +121,11 @@
       "sourceUrl": "https://bip.metropoliagzm.pl/attachments/download/189291",
       "confidence": {
         "en": "High for the named anchor sequence; schematic for station placement and alignment",
-        "pl": "Wysoka pewność dla nazwanej sekwencji punktów; schematyczna dla położenia stacji i przebiegu"
+        "pl": "Wysoka pewność co do nazwanych punktów; położenie stacji i przebieg są schematyczne."
       },
       "description": {
         "en": "A second rapid-tram connection in the 2018 GZM concept runs from Dąbrowa Górnicza Huta Katowice via Sosnowiec Osiedle Zagórze, Sosnowiec Centrum, Siemianowice Śląskie Monorail and Katowice Metropolia to Bytom Centrum. The source lists these as candidate anchors but does not provide surveyed sites or street-level geometry. The rapid-tram network is a recommendation, not an approved build project.",
-        "pl": "Drugie połączenie szybkiego tramwaju w koncepcji GZM z 2018 r. biegnie z Dąbrowy Górniczej Huty Katowice przez Sosnowiec Osiedle Zagórze, Sosnowiec Centrum, kolej jednoszynową w Siemianowicach Śląskich i Katowice Metropolię do Bytomia Centrum. Źródło podaje te punkty jako kotwice, bez pomiaru w terenie i bez geometrii ulicznej. Sieć szybkiego tramwaju jest rekomendacją, nie zatwierdzoną budową."
+        "pl": "Druga linia szybkiego tramwaju w koncepcji GZM z 2018 r. biegnie z rejonu Huty Katowice w Dąbrowie Górniczej przez osiedle Zagórze i Sosnowiec Centrum, kolej jednoszynową w Siemianowicach Śląskich oraz Katowice Metropolię do centrum Bytomia. Źródło podaje te punkty jako orientacyjne, bez pomiaru w terenie i bez geometrii ulicznej. Sieć szybkiego tramwaju jest rekomendacją, nie zatwierdzoną budową."
       },
       "stationCoordinateSourceUrl": "https://otwartedane.metropoliagzm.pl/dataset/rozklady-jazdy-i-lokalizacja-przystankow-gtfs-wersja-rozszerzona",
       "stations": [
@@ -136,7 +136,7 @@
           "schematic": true,
           "coordinateNote": {
             "en": "Approximate Huta Katowice area anchor; project gives no stop coordinate.",
-            "pl": "Przybliżona kotwica rejonu Huty Katowice; projekt nie podaje współrzędnej przystanku."
+            "pl": "Przybliżony punkt w rejonie Huty Katowice; dokument nie podaje współrzędnych przystanku."
           }
         },
         {
@@ -207,11 +207,11 @@
       "sourceUrl": "https://bip.metropoliagzm.pl/attachments/download/189291",
       "confidence": {
         "en": "High for the named corridor; station sequence reflects current existing rail stops",
-        "pl": "Wysoka pewność dla nazwanego korytarza; kolejność stacji odpowiada obecnym przystankom kolejowym"
+        "pl": "Wysoka pewność co do korytarza; kolejność stacji odpowiada obecnym przystankom kolejowym."
       },
       "description": {
         "en": "The 2018 concept classifies Katowice–Mysłowice as a metropolitan basic line using UIC railway. This is a proposed service role on an existing rail corridor, not a proposal for a new track alignment. The editable station chain follows current passenger stations on that corridor.",
-        "pl": "Koncepcja z 2018 r. klasyfikuje Katowice–Mysłowice jako podstawową linię metropolitalną na kolei UIC. To proponowana rola przewozowa na istniejącym korytarzu, a nie projekt nowego przebiegu torów. Edytowalny ciąg stacji idzie po obecnych stacjach pasażerskich tego korytarza."
+        "pl": "Koncepcja z 2018 r. klasyfikuje Katowice–Mysłowice jako podstawową linię metropolitalną na kolei UIC. To proponowana rola przewozowa na istniejącym korytarzu, a nie projekt nowego przebiegu torów. Edytowalny ciąg stacji biegnie po obecnych stacjach pasażerskich tego korytarza."
       },
       "stationCoordinateSourceUrl": "https://koleje-ks.pl/gtfs/2025-2026.zip",
       "stations": [

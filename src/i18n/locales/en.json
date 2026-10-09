@@ -37,7 +37,8 @@
     "inspect": "Inspect",
     "results": "Results",
     "sections": "Panel sections",
-    "sidebar": "Network, inspector and results"
+    "sidebar": "Network, inspector and results",
+    "inspector": "Selected line or metro builder"
   },
   "network": {
     "peek": "NETWORK",
@@ -101,14 +102,14 @@
     "published": "Published network",
     "notCalibrated": "Not calibrated",
     "journey": "journey",
-    "transfers": "transfers",
-    "boardings": "boardings",
-    "walkExcluded": "walk, under 1.2 km",
-    "access800": "{{share}}% within 800 m of tram or rail",
+    "transfers": "transfers:",
+    "boardings": "boardings:",
+    "walkExcluded": "walk, under 1.2 km:",
+    "access800": "residents within 800 m of tram or rail:",
     "local": "Local impact",
-    "localTrips": "trips",
-    "localSatisfaction": "satisfaction",
-    "withinShare": "share inside this municipality",
+    "localTrips": "trips:",
+    "localSatisfaction": "satisfaction:",
+    "withinShare": "share inside this municipality:",
     "tripsTitle": "Modeled transit trips per day. Not a ridership count.",
     "shareTitle": "Transit share among trips longer than 1.2 km. The boarding constant is 0, so this is not calibrated.",
     "doorTitle": "Average door-to-door time for modeled transit riders, in minutes.",
@@ -136,7 +137,7 @@
     "budgetCapital": "capital for new infrastructure",
     "budgetOpYear": "yearly operating change",
     "budgetRevenue": "yearly fare revenue",
-    "budgetRevenuePending": "Fare revenue waits for calibration (brief 23b).",
+    "budgetRevenuePending": "Fare revenue waits for calibration.",
     "budgetFarebox": "farebox recovery",
     "budgetPerRider": "zł capital per new daily rider",
     "budgetPulseTitle": "Capital {{spent}} zł of {{budget}} zł budget"
@@ -219,7 +220,8 @@
     "northAria": "Reset map orientation",
     "tilt": "Toggle map tilt",
     "fit": "Fit",
-    "clockTitle": "Click to reset simulation time and clear vehicles"
+    "clockTitle": "Click to reset simulation time and clear vehicles",
+    "fitTitle": "Fit the region"
   },
   "mode": { "bus": "Bus", "tram": "Tram", "rail": "Rail", "metro": "Metro", "line": "line" },
   "loading": {
@@ -314,8 +316,7 @@
     "loaded": "{{mode}} concept loaded as an editable draft.",
     "move": "Click the new position for {{name}}. Middle-drag also works.",
     "removed": "{{name}} removed from draft.",
-    "draftCount": "{{count}} station in line draft",
-    "draftCountPlural": "{{count}} stations in line draft",
+    "draftCount": { "one": "{{n}} station in line draft", "other": "{{n}} stations in line draft" },
     "moved": "{{name}} moved.",
     "tiles": "OpenFreeMap tiles failed to load.",
     "added": "Added {{name}}. Route geometry is now simplified.",
@@ -368,12 +369,7 @@
     "reset": "Reset snapshot",
     "about": "Data & model"
   },
-  "share": {
-    "banner": "Shared scenario: {{name}}",
-    "untitled": "Shared plan",
-    "keep": "Keep a copy",
-    "close": "Close"
-  },
+  "share": { "banner": "Shared scenario: {{name}}", "untitled": "Shared plan", "keep": "Keep a copy", "close": "Close" },
   "slots": {
     "chip": "PLANS",
     "title": "Saved plans",
@@ -426,8 +422,8 @@
     "cancel": "Cancel",
     "open": "Open line",
     "save": "Save alignment",
-    "catchment": "residents in catchment",
-    "newRapid": "newly within 800 m of rapid transit",
+    "catchment": "residents in catchment:",
+    "newRapid": "newly within 800 m of rapid transit:",
     "oneWay": "one way",
     "spacingWarn": "Some stations are closer than {{meters}} m for this mode.",
     "shared": "Shared published stop",
@@ -511,13 +507,11 @@
     "kind": "stop",
     "close": "Close stop inspector",
     "fallback": "Transit stop",
-    "usingOne": "pattern",
-    "usingMany": "patterns",
     "interchange": "interchange",
     "stop": "stop",
     "fine": "Intervals are scenario estimates per pattern and direction, not a live arrival board. Several patterns may share a line name.",
-    "dailyBoardings": "boardings / day",
-    "dailyTransfers": "transfers / day",
+    "dailyBoardings": "boardings / day:",
+    "dailyTransfers": "transfers / day:",
     "flowPending": "Rider flows are still being assigned.",
     "travelTime": "Travel time from here",
     "service": "Service at this stop",
@@ -594,5 +588,6 @@
     "patterns": { "one": "{{n}} pattern", "other": "{{n}} patterns" },
     "lines": { "one": "{{n}} line", "other": "{{n}} lines" },
     "variants": { "one": "{{n}} variant", "other": "{{n}} variants" }
-  }
+  },
+  "unit": { "million": "m" }
 }
