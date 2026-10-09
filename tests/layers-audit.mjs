@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createModel } from '../src/sim/model.js';
-import { aggregateFlowBands, flowBandCollection } from '../src/layers.js';
+import { aggregateFlowBands, flowBandCollection, paintTravelCells } from '../src/layers.js';
 
 const root = new URL('..', import.meta.url);
 const network = JSON.parse(fs.readFileSync(new URL('./data/gzm/network.json', root), 'utf8'));
@@ -53,6 +53,23 @@ for (const band of bands) {
 const lookup = id => customStops.find(stop => stop.id === id) || network.stops.find(stop => stop.id === id);
 const geo = flowBandCollection(withMetro.flows, lookup);
 assert.ok(geo.features.some(feature => feature.properties.mode === 'metro'), 'flow GeoJSON includes metro');
+
+const mask = {
+  type: 'FeatureCollection',
+  features: [{
+    type: 'Feature',
+    properties: { id: 'probe-cell' },
+    geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] },
+  }],
+};
+const zoneByCellId = new Map([['probe-cell', { id: 'zone-probe', residents: 500 }]]);
+const zoneIndexById = new Map([['zone-probe', 0]]);
+const painted = paintTravelCells(mask, zoneByCellId, zoneIndexById, [8.2, 55], [12, 55], false);
+assert.equal(painted.features[0].properties.travelBand, 10);
+assert.equal(painted.features[0].properties.travelMin, 8.2);
+const mid = paintTravelCells(mask, zoneByCellId, zoneIndexById, [25], [30], true);
+assert.equal(mid.features[0].properties.travelBand, 30);
+assert.equal(mid.features[0].properties.minutesSaved, 5);
 
 console.log(JSON.stringify({
   travelMs: Math.round(travelMs),

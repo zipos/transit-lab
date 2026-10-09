@@ -767,11 +767,20 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
         if (clock <= 30) residents30 += zoneResidents[destination];
         if (clock <= 45) residents45 += zoneResidents[destination];
       }
+      const stopClock = new Float32Array(stopCount);
+      stopClock.fill(Infinity);
+      for (let stopIndex = 0; stopIndex < stopCount; stopIndex++) {
+        const node = stopCount + stopIndex;
+        if (!Number.isFinite(dist[node]) || boards[node] === 0) continue;
+        stopClock[stopIndex] = pathIvt[node] + pathWalk[node] + pathWait[node]
+          + boards[node] * choice.boardMinutes + pathAlight[node] * choice.alightMinutes;
+      }
       const finished = performance.now();
       lastTiming = { buildMs: +(built - started).toFixed(1), searchMs: +(finished - built).toFixed(1), nodes: nodeCount, edges: edgeCount };
       return {
         zoneClock,
         zoneGc,
+        stopClock,
         residents30: Math.round(residents30),
         residents45: Math.round(residents45),
         buildMs: lastTiming.buildMs,

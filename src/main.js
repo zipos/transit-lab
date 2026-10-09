@@ -1,6 +1,6 @@
 import { loadRegion, reportRegionError, paintRegion } from './region.js?v=2026-09-28-engine';
 import { t, localize, applyDom, setLocale, onLocale, fmtNumber, fmtDecimal, plural } from './i18n/index.js?v=2026-10-09-budget';
-import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-09-28-builder';
+import { createModel, modelVersion, walkMinutes } from './sim/model.js?v=2026-10-09-challenges';
 import { choiceParams, crowdMultiplier } from './sim/params.js?v=2026-09-28-flows';
 import { summarizeBudget, capitalCosts } from './sim/budget.js?v=2026-10-09-budget';
 import { minify, expand, bytesToBase64Url, base64UrlToBytes, compressJson, decompressJson, shareUrl } from './share.js?v=2026-09-28-share2';
@@ -14,10 +14,13 @@ import { renderStopInspector } from './ui/inspector-stop.js?v=2026-09-28-flows';
 import { renderLineInspector } from './ui/inspector-line.js?v=2026-10-09-budget';
 import { renderResults } from './ui/results.js?v=2026-10-09-budget';
 import { createModal } from './ui/modal.js?v=2026-09-28-share2';
-import { loadChallengeBook, saveChallengeBook, evaluateChallenge, challengeAllowsMode, countPlayerLines } from './challenges.js?v=2026-10-09-challenges';
+import {
+  loadChallengeBook, saveChallengeBook, evaluateChallenge, challengeAllowsMode, countPlayerLines,
+  challengeAllowsNewLines, challengeAllowsPublishedEdit, odMinutesForChallenge,
+} from './challenges.js?v=2026-10-09-challenges';
 import {
   flowBandCollection, flowStopCollection, paintFlowCells, paintTravelCells,
-  vcColorExpression, modeColorExpression, flowWidthExpression,
+  vcColorExpression, modeColorExpression, flowWidthExpression, flowBandOpacityExpression,
 } from './layers.js?v=2026-10-09-layers';
 
 window.TransitScenario = { normalize, safeUrl: scenarioSafeUrl, safeColor };
@@ -74,7 +77,7 @@ async function startApp() {
   const compactMillions = n => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}m` : format(n);
   const empty = () => ({ overrides: {}, customRoutes: [], customStops: [] });
   const state = { ...empty(), daypart: 'peak', selected: null, selectedStop: null, lineIntervalOnly: false, filter: 'all', search: '', showAll: false, tool: 'inspect', draft: [], draftWaypoints: [], draftRing: false, draftMove: false, movingDraftIndex: null, editingRouteId: null, draftName: 'M1', draftMode: 'metro', draftVehicle: 'metro6', draftAlignment: 'tunnel', draftTemplate: null, draftColor: '#8068e8', draftHeadway: 6, playing: false, speed: 1, minutes: 420, elapsedMinutes: 0, stats: null, baseline: null, budgetMode: false, budgetSummary: null, history: [], sharePreview: null, compareSlotId: null, compareName: '', challenge: null, challengeOdMinutes: null, mobileView: 'map', populationVisible: maskCells.length > 0, activeLayer: 'population', flowsVisible: false, flowsCrowding: false, layerCompare: false, travelOrigin: null, travel: null, mapModes: { bus: true, tram: true, rail: true, metro: true }, networkOpen: true, inspectorOpen: false, panelTab: 'network' };
-  let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0, flowsStatsKey = null, travelRevision = 0;
+  let map, toastTimer, lastFrame = 0, lastVehicles = 0, animationFrame = 0, recomputeTimer, hoverBound = false, insightHoverBound = false, insightPopup = null, modalReturnFocus = null, modalInertState = [], contextLocation = null, accessCache = null, rulerPoints = [], rulerHover = null, rulerActive = false, middleDragIndex = null, middleDragOriginal = null, themeChangeToken = 0, flowsStatsKey = null, insightGridKey = null, insightGridFrame = 0, travelRevision = 0;
   const zoneIndexById = new Map((population?.zones || []).map((zone, index) => [zone.id, index]));
   let vehiclesActive = false, lastVehicleCount = 0;
 
@@ -347,10 +350,17 @@ async function startApp() {
       title = t('bottom.accessLegend');
       max = t('bottom.accessMax');
     } else if (state.activeLayer === 'winners') {
-      caption = t('bottom.winnersCaption');
-      title = t('bottom.winnersLegend');
-      min = t('bottom.winnersMin');
-      max = t('bottom.winnersMax');
+      if (state.layerCompare) {
+        caption = t('bottom.winnersCaption');
+        title = t('bottom.winnersLegend');
+        min = t('bottom.winnersMin');
+        max = t('bottom.winnersMax');
+      } else {
+        caption = t('bottom.winnersScenarioCaption');
+        title = t('bottom.winnersScenarioLegend');
+        min = t('bottom.winnersScenarioMin');
+        max = t('bottom.winnersScenarioMax');
+      }
     } else if (state.activeLayer === 'travel') {
       const name = state.travelOrigin?.name || t('context.fallback');
       caption = state.travelOrigin ? t('bottom.travelCaption', { name }) : t('bottom.travelNeedOrigin');
@@ -364,7 +374,24 @@ async function startApp() {
     $('layer-legend-title').textContent = title;
     $('layer-legend-min').textContent = min;
     $('layer-legend-max').textContent = max;
-    if (note) { note.hidden = !noteText; note.textContent = noteText; }
+    if (note) {
+      if (!noteText) {
+        note.hidden = true;
+        note.textContent = '';
+        note.style.opacity = '';
+      } else if (note.hidden || !note.textContent) {
+        note.hidden = false;
+        note.textContent = noteText;
+        note.style.opacity = '1';
+      } else if (note.textContent !== noteText) {
+        note.hidden = false;
+        note.style.opacity = '0.35';
+        requestAnimationFrame(() => {
+          if (note.textContent !== noteText) note.textContent = noteText;
+          note.style.opacity = '1';
+        });
+      }
+    }
     const fillLayers = [
       ['city-population-fill', 'shared'],
       ['population-grid-fill', 'population'],
@@ -415,8 +442,15 @@ async function startApp() {
   });
   const restoreGameLayers = () => {
     if (!map.getStyle()?.layers || map.getSource('city-population') || map.getLayer('routes')) return;
+    hoverBound = false;
+    insightHoverBound = false;
+    flowsStatsKey = null;
+    insightGridKey = null;
     if (themeMedia.matches) stylizeDarkBasemap(); else stylizeBasemap();
     addLayers(); renderMap();
+    rebuildFlowLayers();
+    if (state.activeLayer === 'winners' || state.activeLayer === 'travel') rebuildInsightGrid();
+    renderPopulationControl();
   };
   map.on('style.load', restoreGameLayers);
   map.on('styledata', restoreGameLayers);
@@ -591,8 +625,8 @@ async function startApp() {
     map.addSource('vehicles', { type: 'geojson', data: featureCollection([]) });
     map.addLayer({ id: 'route-halo', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2.5, 14, 5, 17, 9], 'line-opacity': ['case', ['==', ['get', 'active'], false], 0, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.08, 11, 0.15, 14, 0.5, 17, 0.65], ['interpolate', ['linear'], ['zoom'], 9, 0.35, 11, 0.45, 14, 0.65, 17, 0.75]] } }, before);
     map.addLayer({ id: 'routes', type: 'line', source: 'network-routes', layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['case', ['==', ['get', 'mode'], 'metro'], 4, ['==', ['get', 'mode'], 'rail'], 3, ['==', ['get', 'mode'], 'tram'], 2, 1] }, paint: { 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 1.0, 11, 1.15, 13, 2.0, 17, 4.0], ['interpolate', ['linear'], ['zoom'], 9, 1.8, 11, 1.8, 13, 2.5, 17, 4.5]], 'line-opacity': ['case', ['==', ['get', 'active'], false], 0.08, ['==', ['get', 'mode'], 'bus'], ['interpolate', ['linear'], ['zoom'], 9, 0.25, 11, 0.25, 13, 0.45, 17, 0.70], ['interpolate', ['linear'], ['zoom'], 9, 0.85, 11, 0.85, 13, 0.88, 17, 0.92]] } }, before);
-    map.addLayer({ id: 'flow-band-halo', type: 'line', source: 'flow-bands', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'sort'] }, paint: { 'line-color': '#ffffff', 'line-width': flowWidthExpression(), 'line-opacity': 0.55, 'line-gap-width': 0 } }, before);
-    map.addLayer({ id: 'flow-bands', type: 'line', source: 'flow-bands', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'sort'] }, paint: { 'line-color': modeColorExpression(), 'line-width': flowWidthExpression(), 'line-opacity': 0.88 } }, before);
+    map.addLayer({ id: 'flow-band-halo', type: 'line', source: 'flow-bands', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'sort'] }, paint: { 'line-color': '#ffffff', 'line-width': flowWidthExpression(), 'line-opacity': flowBandOpacityExpression(0.55), 'line-gap-width': 0 } }, before);
+    map.addLayer({ id: 'flow-bands', type: 'line', source: 'flow-bands', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': ['get', 'sort'] }, paint: { 'line-color': modeColorExpression(), 'line-width': flowWidthExpression(), 'line-opacity': flowBandOpacityExpression(0.88) } }, before);
     map.addLayer({ id: 'flow-stops', type: 'circle', source: 'flow-stops', layout: { visibility: 'none' }, paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, ['min', 8, ['+', 2, ['*', 0.04, ['sqrt', ['get', 'boardings']]]]], 15, ['min', 18, ['+', 3, ['*', 0.08, ['sqrt', ['get', 'boardings']]]]]],
       'circle-color': themeMedia.matches ? '#e4f5f7' : '#163b48',
@@ -622,6 +656,7 @@ async function startApp() {
       map.on('mouseleave', 'routes', () => { map.getCanvas().style.cursor = state.tool === 'inspect' ? '' : 'crosshair'; });
       hoverBound = true;
     }
+    bindInsightHover();
   }
   function visibleMapModes() { return Object.keys(state.mapModes).filter(mode => state.mapModes[mode]); }
   function applyMapModeVisibility() {
@@ -657,6 +692,8 @@ async function startApp() {
     }
     if (map?.getLayer('flow-bands')) {
       map.setPaintProperty('flow-bands', 'line-color', state.flowsCrowding ? vcColorExpression(themeMedia.matches) : modeColorExpression());
+      map.setPaintProperty('flow-bands', 'line-opacity', flowBandOpacityExpression(0.88));
+      map.setPaintProperty('flow-band-halo', 'line-opacity', flowBandOpacityExpression(0.55));
     }
     if (map?.getLayer('routes')) {
       map.setPaintProperty('routes', 'line-opacity', show ? 0.18 : routeOpacityPaint);
@@ -666,12 +703,20 @@ async function startApp() {
   function applyInsightPaint() {
     if (!map?.getLayer('insight-grid-fill')) return;
     const dark = themeMedia.matches;
-    if (state.activeLayer === 'winners') {
+    if (state.activeLayer === 'winners' && state.layerCompare) {
       map.setPaintProperty('insight-grid-fill', 'fill-color', [
         'interpolate', ['linear'], ['get', 'accessDelta'],
         -40, dark ? '#a95266' : '#b44a5a',
         0, dark ? '#d6c4ad' : '#e8d5c0',
         40, dark ? '#4c9183' : '#4f9a7a',
+      ]);
+    } else if (state.activeLayer === 'winners') {
+      map.setPaintProperty('insight-grid-fill', 'fill-color', [
+        'interpolate', ['linear'], ['get', 'access45'],
+        0, dark ? '#2a343a' : '#d7dde2',
+        25, dark ? '#4c9183' : '#5ea08a',
+        55, dark ? '#d6b476' : '#d6c36a',
+        85, dark ? '#ca816b' : '#d98a5a',
       ]);
     } else if (state.activeLayer === 'travel' && state.layerCompare) {
       map.setPaintProperty('insight-grid-fill', 'fill-color', [
@@ -697,7 +742,7 @@ async function startApp() {
     if (!map?.getSource('flow-bands')) return;
     const flows = state.stats?.flows;
     const key = flows ? `${flows.boardingsTotal}|${flows.passengerKm}|${flows.refined}|${flows.segmentDaily?.length}` : 'none';
-    if (key === flowsStatsKey && state.flowsVisible) {
+    if (key === flowsStatsKey) {
       applyFlowLayerVisibility();
       return;
     }
@@ -716,48 +761,132 @@ async function startApp() {
       applyFlowLayerVisibility();
     });
   }
-  function rebuildInsightGrid() {
+  function insightGridCacheKey() {
+    if (state.activeLayer === 'winners') {
+      const access = state.stats?.access45;
+      const base = state.baseline?.access45;
+      return `w:${state.layerCompare}:${access?.length}:${base?.length}:${statsRevision}`;
+    }
+    if (state.activeLayer === 'travel' && state.travel && state.travelOrigin?.pos) {
+      const [lng, lat] = state.travelOrigin.pos;
+      return `t:${state.layerCompare}:${state.daypart}:${lng.toFixed(5)}:${lat.toFixed(5)}:${state.travel.residents45}:${statsRevision}`;
+    }
+    return 'off';
+  }
+  function flushInsightGrid() {
     if (!map?.getSource('insight-grid')) return;
-    requestAnimationFrame(() => {
-      if (state.activeLayer === 'winners') {
-        const access = state.stats?.access45 || state.stats?.zoneStats?.map(z => z.access45) || [];
-        const base = state.baseline?.access45 || state.baseline?.zoneStats?.map(z => z.access45) || access;
-        setSourceData('insight-grid', paintFlowCells(maskFeatures, zoneByCellId, zoneIndexById, access, base));
-      } else if (state.activeLayer === 'travel' && state.travel) {
-        setSourceData('insight-grid', paintTravelCells(
-          maskFeatures, zoneByCellId, zoneIndexById,
-          state.travel.zoneClock, state.travel.baselineClock, state.layerCompare,
-        ));
-      } else {
-        setSourceData('insight-grid', featureCollection([]));
-      }
+    const key = insightGridCacheKey();
+    if (key === insightGridKey && key !== 'off') {
       applyInsightPaint();
-    });
+      return;
+    }
+    insightGridKey = key;
+    if (state.activeLayer === 'winners') {
+      const access = state.stats?.access45 || state.stats?.zoneStats?.map(z => z.access45) || [];
+      const base = state.baseline?.access45 || state.baseline?.zoneStats?.map(z => z.access45) || access;
+      setSourceData('insight-grid', paintFlowCells(maskFeatures, zoneByCellId, zoneIndexById, access, base));
+    } else if (state.activeLayer === 'travel' && state.travel) {
+      setSourceData('insight-grid', paintTravelCells(
+        maskFeatures, zoneByCellId, zoneIndexById,
+        state.travel.zoneClock, state.travel.baselineClock, state.layerCompare,
+      ));
+    } else {
+      setSourceData('insight-grid', featureCollection([]));
+    }
+    applyInsightPaint();
+  }
+  function rebuildInsightGrid() {
+    cancelAnimationFrame(insightGridFrame);
+    insightGridFrame = requestAnimationFrame(flushInsightGrid);
+  }
+  function applyTravelResult(scenario, baseline, revision) {
+    if (revision !== travelRevision) return;
+    state.travel = {
+      zoneClock: scenario.zoneClock,
+      baselineClock: baseline.zoneClock,
+      zoneGc: scenario.zoneGc,
+      residents30: scenario.residents30,
+      residents45: scenario.residents45,
+      searchMs: scenario.searchMs,
+      buildMs: scenario.buildMs,
+    };
+    insightGridKey = null;
+    rebuildInsightGrid();
+    renderPopulationControl();
+    $('layers-menu').open = true;
   }
   function requestTravelFrom(pos, name) {
     state.travelOrigin = { pos: pos.slice(), name: name || t('context.fallback') };
     state.activeLayer = 'travel';
     state.populationVisible = true;
+    insightGridKey = null;
+    renderPopulationControl();
     const revision = ++travelRevision;
-    const run = () => {
+    const runMain = () => {
       const scenario = sim.travelFrom(pos, network, state.customRoutes, state.customStops, state.overrides, state.daypart);
       const baseline = sim.travelFrom(pos, network, [], [], {}, state.daypart);
-      if (revision !== travelRevision) return;
-      state.travel = {
-        zoneClock: scenario.zoneClock,
-        baselineClock: baseline.zoneClock,
-        zoneGc: scenario.zoneGc,
-        residents30: scenario.residents30,
-        residents45: scenario.residents45,
-        searchMs: scenario.searchMs,
-        buildMs: scenario.buildMs,
-      };
-      rebuildInsightGrid();
-      renderPopulationControl();
-      $('layers-menu').open = true;
+      applyTravelResult(scenario, baseline, revision);
     };
-    // Keep the click handler snappy; graph+search stays under the 150 ms worker target on the laptop budget.
-    setTimeout(run, 0);
+    const postTravelWorker = () => {
+      statsPool[0].postMessage({
+        job: 'travelTime',
+        revision,
+        compareBaseline: true,
+        pos: pos.slice(),
+        customRoutes: state.customRoutes,
+        customStops: state.customStops,
+        overrides: state.overrides,
+        daypart: state.daypart,
+        networkUrl: window.TRANSIT_URLS.network,
+        populationUrl: window.TRANSIT_URLS.population,
+        tripRate: region.demand?.tripRate,
+      });
+    };
+    if (!workerUnavailable && !statsBusy) {
+      try {
+        if (!statsPool?.length) ensurePool();
+        if (statsPool?.length) {
+          postTravelWorker();
+          return;
+        }
+      } catch (_) {
+        workerUnavailable = true;
+      }
+    }
+    // Fallback when workers are busy with stats slices or unavailable.
+    setTimeout(runMain, 0);
+  }
+  function bindInsightHover() {
+    if (insightHoverBound || !map.getLayer('insight-grid-fill')) return;
+    insightHoverBound = true;
+    insightPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, className: 'insight-popup', maxWidth: '240px' });
+    const hide = () => { map.getCanvas().style.cursor = state.tool === 'inspect' ? '' : 'crosshair'; insightPopup.remove(); };
+    map.on('mouseenter', 'insight-grid-fill', event => {
+      if (!state.populationVisible) return;
+      const props = event.features?.[0]?.properties;
+      if (!props) return;
+      map.getCanvas().style.cursor = 'help';
+      let body = '';
+      if (state.activeLayer === 'winners') {
+        if (state.layerCompare) {
+          const delta = Number(props.accessDelta) || 0;
+          body = `${delta > 0 ? '+' : ''}${fmtDecimal(delta, 1)} ${t('bottom.winnersDeltaUnit')}`;
+        } else {
+          body = `${fmtDecimal(Number(props.access45) || 0, 1)} ${t('bottom.winnersScenarioUnit')}`;
+        }
+      } else if (state.activeLayer === 'travel' && state.travel) {
+        if (state.layerCompare) {
+          const saved = Number(props.minutesSaved) || 0;
+          body = saved > 0 ? t('bottom.travelTipSaved', { min: fmtDecimal(saved, 1) }) : t('bottom.travelTipSame', { min: fmtDecimal(Number(props.travelMin) || 0, 0) });
+        } else {
+          body = t('bottom.travelTipMinutes', { min: fmtDecimal(Number(props.travelMin) || 0, 0) });
+        }
+      }
+      if (!body) return;
+      insightPopup.setLngLat(event.lngLat).setHTML(`<strong>${escape(body)}</strong>`).addTo(map);
+    });
+    map.on('mousemove', 'insight-grid-fill', event => { if (insightPopup.isOpen()) insightPopup.setLngLat(event.lngLat); });
+    map.on('mouseleave', 'insight-grid-fill', hide);
   }
   function renderNetwork() {
     if (!map.getSource('network-routes')) return;
@@ -1238,6 +1367,10 @@ async function startApp() {
   }
   function setRouteStops(route, ids) {
     if (ids.length < 2) return toast(t('toast.needTwo'));
+    const challenge = activeChallenge();
+    if (challenge && route.source !== 'player' && !challengeAllowsPublishedEdit(challenge)) {
+      return toast(t('toast.challengePublished'));
+    }
     remember();
     const ring = route.ring === true && ids.length >= 3;
     const waypoints = Array.isArray(route.waypoints) ? route.waypoints : [];
@@ -1245,11 +1378,19 @@ async function startApp() {
     changed();
   }
   function setRouteField(route, field, value) {
+    const challenge = activeChallenge();
+    if (challenge && route.source !== 'player' && !challengeAllowsPublishedEdit(challenge)) {
+      return toast(t('toast.challengePublished'));
+    }
     remember();
     for (const item of lineTargets(route, field)) writeRoute(item, { [field]: value });
     changed();
   }
   function revertLine(route) {
+    const challenge = activeChallenge();
+    if (challenge && route.source !== 'player' && !challengeAllowsPublishedEdit(challenge)) {
+      return toast(t('toast.challengePublished'));
+    }
     remember();
     for (const item of lineFor(route.id)?.patterns || [route]) delete state.overrides[item.id];
     changed();
@@ -1287,6 +1428,11 @@ async function startApp() {
   }
   function createMetro() {
     if (state.draft.length < (state.draftRing ? 3 : 2)) return toast(state.draftRing ? t('toast.ring') : t('toast.two'));
+    const challenge = activeChallenge();
+    if (!state.editingRouteId && challenge && !challengeAllowsNewLines(challenge)) return toast(t('toast.challengeLines'));
+    if (!state.editingRouteId && challenge?.constraints?.maxNewLines != null && countPlayerLines(state) >= challenge.constraints.maxNewLines) {
+      return toast(t('toast.challengeLines'));
+    }
     remember();
     ensureWaypoints();
     const editing = state.editingRouteId;
@@ -1435,6 +1581,7 @@ async function startApp() {
   function enterLineTool(mode = 'metro') {
     const challenge = activeChallenge();
     if (challenge && !challengeAllowsMode(challenge, mode)) return toast(t('toast.challengeMode'));
+    if (challenge && !challengeAllowsNewLines(challenge) && !state.editingRouteId) return toast(t('toast.challengeLines'));
     if (challenge?.constraints?.maxNewLines != null && countPlayerLines(state) >= challenge.constraints.maxNewLines && !state.editingRouteId) {
       return toast(t('toast.challengeLines'));
     }
@@ -1464,7 +1611,16 @@ async function startApp() {
     renderDraft();
     toast(t('toast.place'));
   }
+  function syncChallengeTools() {
+    const challenge = activeChallenge();
+    const canDraw = !challenge || challengeAllowsNewLines(challenge);
+    const draw = $('metro-tool');
+    if (draw) draw.hidden = !canDraw;
+    const templateSection = $('template-section');
+    if (templateSection) templateSection.hidden = !templates.length || (challenge && !challengeAllowsNewLines(challenge));
+  }
   function renderChallenges() {
+    syncChallengeTools();
     const section = $('challenge-section');
     const host = $('challenge-list');
     const progress = $('challenge-progress');
@@ -1488,7 +1644,18 @@ async function startApp() {
       odMinutes: state.challengeOdMinutes ?? null,
     });
     progress.hidden = false;
-    progress.innerHTML = `<div class="section-title"><h3>${escape(localize(challenge.title))}</h3><span class="value">${verdict.stars}★</span></div>${verdict.results.map(item => `<p class="${item.ok ? 'positive' : ''}">${item.ok ? '✓' : '·'} ${escape(localize(item.objective.label) || item.objective.type)}</p>`).join('')}${verdict.overBudget ? `<p class="model-notice">${escape(t('network.challengeOverBudget'))}</p>` : ''}${verdict.complete ? `<p class="positive">${escape(t('network.challengeDone'))}</p>` : ''}`;
+    const next = challengeCatalog.find(item => item.id !== challenge.id && !(challengeBook.stars?.[item.id] >= (item.stars?.length || 0)));
+    const doneActions = verdict.complete
+      ? `<p class="challenge-done">${escape(t('network.challengeDone'))}</p><div class="toolbar"><button type="button" data-challenge-share>${escape(t('network.challengeShare'))}</button>${next ? `<button type="button" class="primary" data-challenge-next="${escape(next.id)}">${escape(t('network.challengeNext'))}</button>` : ''}</div>`
+      : '';
+    progress.innerHTML = `<div class="section-title"><h3>${escape(localize(challenge.title))}</h3><span class="value">${verdict.stars}★</span></div>${verdict.results.map(item => {
+      const valueNote = item.value != null && Number.isFinite(item.value)
+        ? (item.objective.type === 'odTime' ? ` · ${fmtDecimal(item.value, 1)} min` : '')
+        : '';
+      return `<p class="${item.ok ? 'positive' : ''}">${item.ok ? '✓' : '·'} ${escape(localize(item.objective.label) || item.objective.type)}${escape(valueNote)}</p>`;
+    }).join('')}${verdict.overBudget ? `<p class="model-notice">${escape(t('network.challengeOverBudget'))}</p>` : ''}${doneActions}`;
+    progress.querySelector('[data-challenge-share]')?.addEventListener('click', () => shareScenario());
+    progress.querySelector('[data-challenge-next]')?.addEventListener('click', event => startChallenge(event.currentTarget.dataset.challengeNext));
     if (verdict.stars > (challengeBook.stars[challenge.id] || 0)) {
       challengeBook.stars[challenge.id] = verdict.stars;
       saveChallengeBook(region.id, challengeBook);
@@ -1529,6 +1696,9 @@ async function startApp() {
     const template = templates.find(t => t.id === templateId);
     if (!template || !Array.isArray(template.stations) || template.stations.length < 2) return toast(t('toast.incomplete'));
     const mode = ['tram', 'rail', 'metro', 'bus'].includes(template.mode) ? template.mode : 'rail';
+    const challenge = activeChallenge();
+    if (challenge && !challengeAllowsNewLines(challenge)) return toast(t('toast.challengeLines'));
+    if (challenge && !challengeAllowsMode(challenge, mode)) return toast(t('toast.challengeMode'));
     const spec = modes[mode] || modes.rail;
     state.tool = 'metro'; state.selected = null; state.selectedStop = null; state.draftRing = false; state.draftMove = false; state.movingDraftIndex = null; state.editingRouteId = null; state.draftTemplate = template;
     state.draftMode = mode; state.draftVehicle = spec.vehicleOptions[0]; state.draftAlignment = spec.alignmentOptions[0];
@@ -1577,6 +1747,11 @@ async function startApp() {
     };
   }
   function renderStats() {
+    refreshBudget();
+    const challenge = activeChallenge();
+    state.challengeOdMinutes = challenge
+      ? odMinutesForChallenge(challenge, sim, network, state, state.daypart)
+      : null;
     renderResults(ctx);
     renderCompare();
     renderChallenges();
@@ -1689,6 +1864,10 @@ async function startApp() {
     if (data.revision === statsRevision && data.stats?.flows && !data.refine) beginRefine(lastScenario, data.stats);
   }
   function onPoolMessage(data) {
+    if (data.job === 'travelTime') {
+      applyTravelResult(data.travel, data.travelBaseline, data.revision);
+      return;
+    }
     if (typeof data.progress === 'number') {
       if (data.revision !== statsRevision) return;
       sliceProgress[data.workerIndex] = data.progress;
@@ -2018,6 +2197,7 @@ async function startApp() {
   });
   $('layer-compare-toggle')?.addEventListener('change', e => {
     state.layerCompare = e.target.checked;
+    insightGridKey = null;
     rebuildInsightGrid();
     renderPopulationControl();
   });
@@ -2398,7 +2578,13 @@ async function startApp() {
     if (isDebug) window.__DEBUG__.lastVehicleCount = lastVehicleCount;
     setSourceData('vehicles', featureCollection(features));
   }
-  Object.assign(ctx, { $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, editPlayerAlignment, colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, focusFlow, remember, changed, toast, map, enterMetroTool, enterLineTool, openData, format, compactMillions, maybeStartIntro, renderList, renderInspector, setMobileView, routeGeometry, draftCatchment, confirmDialog, nextDraftName, refreshBudget });
+  Object.assign(ctx, {
+    $, state, allRoutes, lines, lineFor, routeColor, safeUrl, suggestLineColor, renderDraft, createMetro, editPlayerAlignment,
+    colors, stop, network, sim, region, routeById, setRouteField, setRouteStops, revertLine, selectRoute, focusFlow, remember,
+    changed, toast, map, enterMetroTool, enterLineTool, openData, format, compactMillions, maybeStartIntro, renderList,
+    renderInspector, setMobileView, routeGeometry, draftCatchment, confirmDialog, nextDraftName, refreshBudget, activeChallenge,
+    challengeAllowsMode, challengeAllowsNewLines, challengeAllowsPublishedEdit,
+  });
   renderTemplates(); renderChallenges(); renderList(); renderInspector();
   document.addEventListener('pointerdown', e => {
     if (intro.active && intro.index === 0) return;

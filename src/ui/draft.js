@@ -5,7 +5,7 @@ import { modes } from '../modes.js?v=2026-09-28-builder';
 const MODE_ORDER = ['metro', 'tram', 'bus', 'rail'];
 
 export function renderDraftInspector(ctx) {
-  const { $, state, colors, safeUrl, suggestLineColor, renderDraft, renderInspector, createMetro, map, draftCatchment, confirmDialog } = ctx;
+  const { $, state, colors, safeUrl, suggestLineColor, renderDraft, renderInspector, createMetro, map, draftCatchment, confirmDialog, activeChallenge, challengeAllowsMode, enterLineTool, toast } = ctx;
   if (state.tool !== 'metro') return false;
   const el = $('inspector-content');
   $('inspector-peek-label').textContent = '✎';
@@ -28,7 +28,13 @@ export function renderDraftInspector(ctx) {
   const routeNote = (template ? t('draft.templateNote') : t('draft.directNote', { mode: mode.toLowerCase() }))
     + (state.draftRing ? t('draft.ringNote') : '')
     + t('draft.editHints');
-  const modePicker = html`<div class="mode-picker" role="group" aria-label="${t('draft.mode')}">${raw(MODE_ORDER.map(id => html`<button type="button" data-draft-mode="${id}" aria-pressed="${id === state.draftMode}" class="chip mode-${id}">${t('mode.' + id)}</button>`).join(''))}</div>`;
+  const challenge = typeof activeChallenge === 'function' ? activeChallenge() : null;
+  const allowedModes = challenge?.constraints?.modes?.length
+    ? MODE_ORDER.filter(id => challengeAllowsMode?.(challenge, id))
+    : MODE_ORDER;
+  const modePicker = allowedModes.length
+    ? html`<div class="mode-picker" role="group" aria-label="${t('draft.mode')}">${raw(allowedModes.map(id => html`<button type="button" data-draft-mode="${id}" aria-pressed="${id === state.draftMode}" class="chip mode-${id}">${t('mode.' + id)}</button>`).join(''))}</div>`
+    : '';
   const vehicleOptions = (spec.vehicleOptions || []).map(id => html`<option value="${id}" ${raw(id === state.draftVehicle ? 'selected' : '')}>${t('vehicle.' + id)}</option>`).join('');
   const alignmentOptions = (spec.alignmentOptions || []).map(id => html`<option value="${id}" ${raw(id === state.draftAlignment ? 'selected' : '')}>${t('alignment.' + id)}</option>`).join('');
   const stations = state.draft.map((station, index) => html`<div class="stop-row"><span class="stop-index">${index + 1}</span><span title="${localize(station.coordinateNote) || ''}">${station.name}${raw(station.stopId ? html`<small class="source-note">${t('draft.shared')}</small>` : station.schematic ? html`<small class="source-note">${t('draft.schematic')}</small>` : '')}</span><button data-draft-remove="${index}" title="${t('draft.removeStation')}">×</button></div>`).join('');
@@ -50,6 +56,14 @@ export function renderDraftInspector(ctx) {
       if (template) return;
       const next = button.dataset.draftMode;
       if (!modes[next] || next === state.draftMode) return;
+      if (challenge && challengeAllowsMode && !challengeAllowsMode(challenge, next)) {
+        toast?.(t('toast.challengeMode'));
+        return;
+      }
+      if (typeof enterLineTool === 'function') {
+        enterLineTool(next);
+        return;
+      }
       state.draftMode = next;
       const nextSpec = modes[next];
       state.draftVehicle = nextSpec.vehicleOptions[0];

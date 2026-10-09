@@ -27,6 +27,67 @@ export function challengeAllowsMode(challenge, mode) {
   return modes.includes(mode);
 }
 
+export function challengeAllowsNewLines(challenge) {
+  if (!challenge) return true;
+  if (challenge.constraints?.forbidNewInfrastructure) return false;
+  const max = challenge.constraints?.maxNewLines;
+  if (max === 0) return false;
+  return true;
+}
+
+export function challengeAllowsPublishedEdit(challenge) {
+  if (!challenge) return true;
+  if (challenge.constraints?.allowEditingPublished === false) return false;
+  return true;
+}
+
+/** Door-to-door minutes between two lon/lat points using one origin travel search. */
+export function computeOdMinutes(sim, network, customRoutes, customStops, overrides, daypart, from, to) {
+  if (!sim?.travelFrom || !from?.length || !to?.length) return null;
+  const travel = sim.travelFrom(from, network, customRoutes, customStops, overrides, daypart);
+  const stops = (network?.stops || []).concat(customStops || []);
+  const stopClock = travel?.stopClock;
+  if (stopClock?.length && stops.length) {
+    let best = Infinity;
+    for (let index = 0; index < stopClock.length; index++) {
+      const minutes = stopClock[index];
+      if (!Number.isFinite(minutes)) continue;
+      const pos = stops[index]?.pos;
+      if (!pos) continue;
+      const door = minutes + sim.km(pos, to) * 1.25 / 4.5 * 60;
+      if (door < best) best = door;
+    }
+    if (Number.isFinite(best)) return best;
+  }
+  const clock = travel?.zoneClock;
+  if (!clock?.length) return null;
+  let best = Infinity;
+  const zones = sim.zones || [];
+  for (let index = 0; index < zones.length; index++) {
+    const minutes = clock[index];
+    if (!Number.isFinite(minutes)) continue;
+    const centroid = [zones[index][1], zones[index][2]];
+    const door = minutes + sim.km(centroid, to) * 1.25 / 4.5 * 60;
+    if (door < best) best = door;
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
+export function odMinutesForChallenge(challenge, sim, network, scenario, daypart = 'peak') {
+  const objective = (challenge?.objectives || []).find(item => item.type === 'odTime');
+  if (!objective) return null;
+  return computeOdMinutes(
+    sim,
+    network,
+    scenario?.customRoutes || [],
+    scenario?.customStops || [],
+    scenario?.overrides || {},
+    daypart,
+    objective.from,
+    objective.to,
+  );
+}
+
 export function evaluateObjective(objective, ctx) {
   const { stats, baseline, budget, odMinutes } = ctx;
   if (!stats) return { ok: false, value: null };

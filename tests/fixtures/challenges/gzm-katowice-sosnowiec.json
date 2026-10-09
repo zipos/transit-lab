@@ -1,0 +1,25 @@
+{
+  "id": "gzm-katowice-sosnowiec",
+  "claimedStars": 2,
+  "note": "Direct metro between Katowice Rynek Teatr Śląski and Sosnowiec Aleja Zwycięstwa, headway 3.",
+  "scenario": {
+    "customRoutes": [
+      {
+        "id": "fix:ks",
+        "source": "player",
+        "mode": "metro",
+        "name": "M1",
+        "headway": 3,
+        "active": true,
+        "ring": false,
+        "vehicle": "metro6",
+        "alignment": "tunnel",
+        "color": "#8068e8",
+        "stopIds": ["ztm:10605", "ztm:7408"],
+        "geometry": [[[19.0231001, 50.2593879], [19.1301785, 50.2795616]]]
+      }
+    ],
+    "customStops": [],
+    "overrides": {}
+  }
+}

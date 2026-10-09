@@ -72,6 +72,9 @@ jobs:
       - name: Run budget audit
         run: node tests/budget-audit.mjs
 
+      - name: Run challenges audit
+        run: node tests/challenges-audit.mjs
+
       - name: Install Playwright and browser dependencies
         run: |
           npm install --no-save @playwright/test

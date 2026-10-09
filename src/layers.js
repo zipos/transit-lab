@@ -4,7 +4,10 @@ import { choiceParams } from './sim/params.js';
 
 const MODE_ORDER = { metro: 4, rail: 3, tram: 2, bus: 1 };
 
-/** Sum daily flow (and peak v/c) per undirected stop-pair × mode. */
+/**
+ * Sum daily flow (and peak v/c) per undirected stop-pair × mode.
+ * Parallel patterns on the same segment add into one band; peak v/c keeps the busiest segment’s names.
+ */
 export function aggregateFlowBands(flows) {
   const bands = new Map();
   if (!flows?.layout || !flows.segmentDaily) return [];
@@ -147,11 +150,25 @@ export function modeColorExpression() {
   ];
 }
 
-export function flowWidthExpression() {
+function flowWidthCore() {
   return [
     'interpolate', ['linear'], ['zoom'],
     9, ['interpolate', ['linear'], ['get', 'sqrtFlow'], 0, 0.6, 20, 1.4, 60, 2.4, 120, 3.6],
     12, ['interpolate', ['linear'], ['get', 'sqrtFlow'], 0, 1.2, 20, 3, 60, 5.5, 120, 8],
     15, ['interpolate', ['linear'], ['get', 'sqrtFlow'], 0, 2, 20, 5, 60, 9, 120, 14],
   ];
+}
+
+/** Bus bands hidden below z11 (too dense at region scale); fixed-rail modes get a width boost. */
+export function flowWidthExpression() {
+  const core = flowWidthCore();
+  return [
+    'case',
+    ['all', ['==', ['get', 'mode'], 'bus'], ['<', ['zoom'], 11]], 0,
+    ['match', ['get', 'mode'], 'metro', ['*', core, 1.22], 'rail', ['*', core, 1.14], 'tram', ['*', core, 1.08], core],
+  ];
+}
+
+export function flowBandOpacityExpression(active = 0.88) {
+  return ['case', ['all', ['==', ['get', 'mode'], 'bus'], ['<', ['zoom'], 11]], 0, active];
 }

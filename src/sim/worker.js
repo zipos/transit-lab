@@ -11,14 +11,12 @@ export function runJob(data, postMessage) {
     const daypart = data.daypart || 'peak';
     const live = () => !data.trackRevision || latestRevision === data.revision;
     if (data.job === 'travelTime') {
-      if (!live()) return;
       const pos = data.pos;
       const started = performance.now();
       const scenario = model.travelFrom(pos, model.network, data.customRoutes || [], data.customStops || [], data.overrides || {}, daypart);
       const baseline = data.compareBaseline
         ? model.travelFrom(pos, model.network, data.compare?.customRoutes || [], data.compare?.customStops || [], data.compare?.overrides || {}, daypart)
         : model.travelFrom(pos, model.network, [], [], {}, daypart);
-      if (!live()) return;
       postMessage({
         revision: data.revision,
         job: 'travelTime',
@@ -108,6 +106,11 @@ function packFlow(stats, buffers, workerIndex = 0) {
 }
 
 export function acceptJob(data, postMessage) {
+  // Travel-time probes use their own revision counter; never steal the stats queue slot.
+  if (data.job === 'travelTime') {
+    runJob(data, postMessage);
+    return;
+  }
   pending = data;
   latestRevision = data.revision || 0;
   data.trackRevision = true;

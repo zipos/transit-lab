@@ -18,14 +18,16 @@
       "objectives": [
         {
           "type": "odTime",
-          "from": [19.0237, 50.2598],
-          "to": [19.1286, 50.2800],
+          "from": [19.0231001, 50.2593879],
+          "to": [19.1301785, 50.2795616],
           "maxMinutes": 15,
-          "label": { "pl": "Katowice ↔ Sosnowiec ≤ 15 min", "en": "Katowice ↔ Sosnowiec ≤ 15 min" }
+          "label": { "pl": "Katowice ↔ Sosnowiec ≤ 15 min", "en": "Katowice ↔ Sosnowiec ≤ 15 min" },
+          "note": "Anchors: Katowice Rynek Teatr Śląski (ztm:10605) and Sosnowiec Aleja Zwycięstwa (ztm:7408)."
         },
-        { "type": "tripsDelta", "min": 5000, "label": { "pl": "+5 000 podróży", "en": "+5,000 trips" } }
+        { "type": "tripsDelta", "min": 350, "label": { "pl": "+350 podróży", "en": "+350 trips" } }
       ],
-      "stars": [1, 2]
+      "stars": [1, 2],
+      "review": "Polish brief wording + trip threshold tuned to uncalibrated ASC=0 model (brief 23b may raise the bar)."
     },
     {
       "id": "gzm-gliwice-katowice",
@@ -68,9 +70,10 @@
       },
       "objectives": [
         { "type": "coverage", "minDelta": 40000, "label": { "pl": "+40 000 w 800 m od szybkiego transportu", "en": "+40,000 within 800 m of rapid transit" } },
-        { "type": "municipalityTrips", "municipality": "Mikołów", "min": 1200, "label": { "pl": "Mikołów ≥ 1 200 podróży", "en": "Mikołów ≥ 1,200 trips" } }
+        { "type": "municipalityTrips", "municipality": "Mikołów", "min": 1400, "label": { "pl": "Mikołów ≥ 1 400 podróży", "en": "Mikołów ≥ 1,400 trips" } }
       ],
-      "stars": [1, 2]
+      "stars": [1, 2],
+      "review": "Mikołów trip floor raised so published baseline does not award a star (was 1 200 vs ~1 281 today)."
     },
     {
       "id": "gzm-tram-frequency",
