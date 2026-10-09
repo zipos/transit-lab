@@ -65,4 +65,9 @@ assert.equal(book.active, second.id);
 assert.equal(book.slots.find(slot => slot.id === first.id).scenario.name, 'A');
 assert.equal(book.slots.find(slot => slot.id === second.id).scenario.name, 'B');
 assert.notEqual(JSON.stringify(book.slots[0].scenario), JSON.stringify(book.slots[1].scenario));
+
+// Slots made within one millisecond must never share an id.
+const crowded = emptyBook();
+for (let i = 0; i < 30; i++) createSlot(crowded, { overrides: {}, customRoutes: [], customStops: [], daypart: 'peak', networkVersion: network.version, name: `S${i}` }, null, `S${i}`);
+assert.equal(new Set(crowded.slots.map(slot => slot.id)).size, 30, 'slot ids must be unique');
 console.log(`Share audit passed. Two-line link is ${link.length} characters.`);

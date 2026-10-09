@@ -1888,7 +1888,9 @@ async function startApp() {
       refineState.xfer = mixFlows(refineState.xfer, assigned.flows.stopTransfers, refineState.iteration);
       refineState.riders = mixFlows(refineState.riders, assigned.flows.patternRiders, refineState.iteration);
       const merged = { ...assigned, flows: { ...assigned.flows, patternRiders: refineState.riders, layout: state.stats.flows.layout, stopIds: state.stats.flows.stopIds } };
-      state.stats = sim.presentFlows(merged, refineState.daily, refineState.board, refineState.xfer);
+      /* Crowding re-routes riders, so the crowded run's totals drift from the uncrowded baseline. Keep the first pass's
+         headline figures and take only the flows from the refined run, as docs/model-parameters.md specifies. */
+      state.stats = { ...state.stats, flows: sim.presentFlows(merged, refineState.daily, refineState.board, refineState.xfer).flows };
       state.stats.flows.refining = refineState.iteration < 3;
       state.stats.flows.refined = refineState.iteration >= 3;
       if (state.stats.flows.refined) state.stats.flows.refineMs = Math.round(performance.now() - refineState.started);

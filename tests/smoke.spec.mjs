@@ -28,6 +28,11 @@ test('smoke test: load, select tram T6, enter metro tool, place 2 stations', asy
   if (await introSkip.count()) await introSkip.click();
   await page.locator('#layers-menu').evaluate(menu => { menu.open = false; });
 
+  // The untouched network must stay at zero against its own baseline once the crowding passes finish. They once
+  // re-routed riders, so the headline drifted by about -0.7% on a machine with several cores.
+  await page.locator('#flow-results').getByText('Refined', { exact: true }).waitFor({ state: 'attached', timeout: 90000 });
+  await expect(page.locator('#delta-passengers')).toHaveText(/^0 /);
+
   // 3. Select tram T6
   await page.fill('#route-search', 'T6');
   const t6Card = page.locator('#route-list button.route-card', { hasText: 'T6' }).first();

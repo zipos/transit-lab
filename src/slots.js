@@ -2,10 +2,18 @@ export const slotLimit = 30;
 
 export function emptyBook() { return { active: null, slots: [] }; }
 
+/* A timestamp plus one random character collided 1 time in 36 for two slots made in the same millisecond. */
+function newId(book) {
+  let id;
+  do id = `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36).padStart(2, '0')}`;
+  while (book.slots.some(slot => slot.id === id));
+  return id;
+}
+
 export function createSlot(book, scenario, summary, name) {
   if (book.slots.length >= slotLimit) return null;
   const slot = {
-    id: `${Date.now().toString(36)}${Math.floor(Math.random() * 36).toString(36)}`,
+    id: newId(book),
     name,
     updated: Date.now(),
     summary: summary ? structuredClone(summary) : null,
@@ -37,7 +45,7 @@ export function duplicateSlot(book, id) {
   const source = book.slots.find(slot => slot.id === id);
   if (!source || book.slots.length >= slotLimit) return null;
   const slot = {
-    id: `${Date.now().toString(36)}${Math.floor(Math.random() * 36).toString(36)}`,
+    id: newId(book),
     name: source.name,
     updated: Date.now(),
     summary: source.summary ? structuredClone(source.summary) : null,
