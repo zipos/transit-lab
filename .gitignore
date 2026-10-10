@@ -5,3 +5,6 @@ __pycache__/
 # Raw inputs are fetched and hash-verified, not tracked.
 data/sources/*
 !data/sources/.gitkeep
+
+# Screenshot tooling dependencies.
+tools/screenshots/node_modules/

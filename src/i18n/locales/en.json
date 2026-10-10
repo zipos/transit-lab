@@ -258,7 +258,9 @@
     "exit": "Exit fullscreen",
     "showButton": "Show fullscreen button",
     "note": "Press F to toggle fullscreen while the map or a panel has focus. Escape exits fullscreen.",
-    "language": "Language"
+    "language": "Language",
+    "mapTheme": "Map style",
+    "map": { "light": "Light", "dark": "Dark", "auto": "Follow system" }
   },
   "intro": {
     "kicker": "Step {{step}} of 5",

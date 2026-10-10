@@ -277,7 +277,9 @@
     "exit": "Zamknij pełny ekran",
     "showButton": "Pokaż przycisk pełnego ekranu",
     "note": "Klawisz F przełącza pełny ekran, gdy aktywna jest mapa albo panel. Esc wychodzi z pełnego ekranu.",
-    "language": "Język"
+    "language": "Język",
+    "mapTheme": "Styl mapy",
+    "map": { "light": "Jasny", "dark": "Ciemny", "auto": "Jak w systemie" }
   },
   "intro": {
     "kicker": "Krok {{step}} z 5",

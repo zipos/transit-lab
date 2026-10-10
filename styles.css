@@ -2696,6 +2696,8 @@ body[data-network-open='false'] .ruler-panel { left: 66px; }
   .bottom-group .sim-clock { min-width: 39px; margin-inline: 2px; font-size: 11px; }
   .map-orientation :is(#tilt-button, #zoom-out-button, #zoom-in-button) { display: none; }
   .map-orientation #fit-button { min-width: 32px; font-size: 0; }
+  .map-orientation #fit-button { gap: 0; }
+  .map-orientation #fit-button > span { display: none; }
   .map-orientation #fit-button::before { content: '◎'; font-size: 18px; }
   .maplibregl-ctrl-bottom-right { bottom: calc(var(--bottom-bar-h) + 3px); }
   .ruler-panel, body[data-network-open='false'] .ruler-panel { left: 12px; bottom: calc(var(--bottom-bar-h) + 12px); }

@@ -263,7 +263,8 @@ async function startApp() {
   }
   function openSettings() {
     const fullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
-    modal(`<span class="chip">${escape(t('settings.chip'))}</span><h2>${escape(t('settings.title'))}</h2><div class="form-stack"><div class="locale-switch" role="group">${escape(t('settings.language'))} <button type="button" data-settings-locale="pl">PL</button> <button type="button" data-settings-locale="en">EN</button></div><button id="settings-fullscreen" type="button">${escape(fullscreen ? t('settings.exit') : t('settings.enter'))}</button><label class="toggle-row"><input id="settings-fullscreen-visible" type="checkbox" ${showFullscreenButton ? 'checked' : ''}> ${escape(t('settings.showButton'))}</label><button id="settings-intro" type="button">${escape(t('intro.showAgain'))}</button><p class="fine-print">${escape(t('settings.note'))}</p></div>`);
+    modal(`<span class="chip">${escape(t('settings.chip'))}</span><h2>${escape(t('settings.title'))}</h2><div class="form-stack"><div class="locale-switch" role="group">${escape(t('settings.language'))} <button type="button" data-settings-locale="pl">PL</button> <button type="button" data-settings-locale="en">EN</button></div><label class="toggle-row">${escape(t('settings.mapTheme'))} <select id="settings-map-theme">${['light', 'dark', 'auto'].map(value => `<option value="${value}" ${(introSettings().mapTheme || 'light') === value ? 'selected' : ''}>${escape(t('settings.map.' + value))}</option>`).join('')}</select></label><button id="settings-fullscreen" type="button">${escape(fullscreen ? t('settings.exit') : t('settings.enter'))}</button><label class="toggle-row"><input id="settings-fullscreen-visible" type="checkbox" ${showFullscreenButton ? 'checked' : ''}> ${escape(t('settings.showButton'))}</label><button id="settings-intro" type="button">${escape(t('intro.showAgain'))}</button><p class="fine-print">${escape(t('settings.note'))}</p></div>`);
+    $('settings-map-theme').onchange = e => { writeIntroSettings({ mapTheme: e.target.value }); restyleMap(); };
     $('settings-fullscreen').onclick = async () => { closeModal(); await toggleFullscreen(); };
     $('settings-intro').onclick = () => { writeIntroSettings({ introDone: false }); intro.index = 0; intro.active = false; intro.started = false; closeModal(); maybeStartIntro(); };
     $('modal-content').querySelectorAll('[data-settings-locale]').forEach(button => { button.onclick = () => { setLocale(button.dataset.settingsLocale); closeModal(); }; });
@@ -415,7 +416,9 @@ async function startApp() {
   }
   const { modal, closeModal, confirmDialog } = createModal($);
 
-  const themeMedia = matchMedia('(prefers-color-scheme: dark)');
+  const systemDark = matchMedia('(prefers-color-scheme: dark)');
+  /* The basemap is light unless the player picks dark (or follows the system); the panels always follow the system. */
+  const themeMedia = { get matches() { const pick = introSettings().mapTheme; return pick === 'dark' || (pick === 'auto' && systemDark.matches); } };
   const mapStyle = () => `https://tiles.openfreemap.org/styles/${themeMedia.matches ? 'dark' : 'liberty'}`;
   map = new maplibregl.Map({
     container: 'map', style: mapStyle(),
@@ -471,14 +474,15 @@ async function startApp() {
     map.on('mousemove', event => { if (rulerActive && middleDragIndex === null) { rulerHover = [event.lngLat.lng, event.lngLat.lat]; renderRuler(); } });
     fitFocus();
   });
-  themeMedia.addEventListener('change', () => {
+  function restyleMap() {
     // Complete pending symbol placement before replacing the whole style.
     // MapLibre can otherwise read a half-removed symbol layer during a rapid scenario edit.
     const token = ++themeChangeToken;
     const applyTheme = () => { if (token === themeChangeToken) map.setStyle(mapStyle(), { diff: false }); };
     if (map.isStyleLoaded()) { map.once('idle', applyTheme); map.triggerRepaint(); }
     else setTimeout(applyTheme, 250);
-  });
+  }
+  systemDark.addEventListener('change', () => { if (introSettings().mapTheme === 'auto') restyleMap(); });
 
   function stylizeBasemap() {
     const paint = (id, key, value) => { if (map.getLayer(id)) try { map.setPaintProperty(id, key, value); } catch (_) {} };
