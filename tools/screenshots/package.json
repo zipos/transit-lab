@@ -1,0 +1,8 @@
+{
+  "name": "transit-lab-screenshots",
+  "private": true,
+  "type": "module",
+  "description": "Regenerates the README screenshots. Kept apart from the app, which has no build step or dependencies.",
+  "scripts": { "shots": "node index.mjs" },
+  "devDependencies": { "playwright-core": "^1.49.0" }
+}

@@ -144,7 +144,7 @@ Optional **Budget mode** adds planning-level capital and fleet costs, with a sou
 
 <img src="docs/screenshots/mobile.webp" alt="The app on a phone: map, network list and line inspector" width="100%">
 
-On a phone the side panels become tabs (**Map**, **Network**, **Inspect**, **Results**) and the controls fit in a two-row bar. The interface follows the system light or dark setting, and the language follows your browser: Polish when it starts with `pl`, English otherwise. You can switch at any time with **PL / EN**.
+On a phone the side panels become tabs (**Map**, **Network**, **Inspect**, **Results**) and the controls fit in a two-row bar. The panels follow the system light or dark setting, while the map stays light unless you change **Settings → Map style** to dark or to follow the system, because dense networks read more clearly on a light basemap. The language follows your browser: Polish when it starts with `pl`, English otherwise. You can switch at any time with **PL / EN**.
 
 <img src="docs/screenshots/language.webp" alt="The same line inspector in English and in Polish" width="100%">
 
@@ -324,6 +324,7 @@ All interface text is in `src/i18n/locales/en.json` and `pl.json`. Elements carr
 | `regions/<id>/` | Region manifest, historical proposals and challenges |
 | `data/` | Importers, pinned source list and the committed processed data |
 | `tests/` | Audits and the browser smoke test |
+| `tools/` | The baseline builder and the screenshot generator |
 | `deploy/` | Runbook and config for self-hosting |
 | `docs/` | Model notes, decisions, roadmap briefs and these screenshots |
 
@@ -382,6 +383,25 @@ python3 tests/pkm-import-audit.py
 There is one audit per feature (lines, share links, revisions, zones, flows, builder, budget, challenges), all listed in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which also runs a Playwright smoke test in a real browser. The PKM importer audit requires the raw PKM snapshot; the Node audits use committed processed data.
 
 The zoom-expression audit exists because MapLibre drops a layer whose style expression is invalid and only logs an event, which once made every route line disappear without an error.
+
+</details>
+
+<details>
+<summary><b>Regenerate the screenshots</b></summary>
+
+<br>
+
+The images in this README come from the real app, driven by Playwright. They need `cwebp` (from libwebp) and a one-time browser download:
+
+```bash
+cd tools/screenshots
+npm install && npx playwright install chromium
+node index.mjs                  # capture everything, then compose
+node index.mjs capture edit     # re-take one capture
+node index.mjs compose hero     # re-compose one image
+```
+
+`capture.mjs` holds one job per scene (it opens the app, hides layers that would clutter the shot, and saves raw screenshots), and `compose.mjs` turns them into the framed, side-by-side and phone-mockup images in `docs/screenshots/`. Set `CHROME_PATH` to use a Chromium you already have.
 
 </details>
 
